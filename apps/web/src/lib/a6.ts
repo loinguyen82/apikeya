@@ -1,48 +1,68 @@
 /**
- * Tự động kết nối và lấy số dư thực tế theo thời gian thực từ A6API
+ * Tự động kết nối và lấy số dư THỰC TẾ từ tài khoản A6API (qua API User Self / Quota chuẩn)
  */
 export async function getA6LiveBalance(): Promise<{ usd: number; vnd: number }> {
   const apiKey = process.env.A6API_KEY || 'sk-kU4qv9ydZ3os8PT60TkM8JvyuKxIdx6MFSzh63JucqLs00dE'
-  const baseUrl = (process.env.A6API_BASE_URL || 'https://api.a6api.com/v1').replace(/\/$/, '')
   const rate = 25400 // 1 USD = 25.400 VND
 
-  let remainingUsd = 4.0 // Giá trị mặc định an toàn
+  let actualUsd = 0
 
-  try {
-    // 1. Thử lấy subscription limit từ A6API
-    const subRes = await fetch(`${baseUrl}/dashboard/billing/subscription`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      next: { revalidate: 10 }, // Cache 10s để load trang siêu nhanh
-    })
+  // Danh sách các endpoint lấy số dư thực tế của hệ thống A6API (NewAPI / OneAPI backend)
+  const candidateUrls = [
+    'https://a6api.com/api/user/self',
+    'https://api.a6api.com/api/user/self',
+    'https://api.a6api.com/v1/user/self',
+    'https://api.a6api.com/v1/dashboard/billing/subscription',
+    'https://a6api.com/api/user/dashboard',
+  ]
 
-    if (subRes.ok) {
-      const sub = await subRes.json()
-      const hardLimit = sub.hard_limit_usd || sub.system_hard_limit_usd || 0
-
-      // 2. Lấy usage hiện tại
-      const now = new Date()
-      const startDate = `${now.getFullYear()}-01-01`
-      const endDate = `${now.getFullYear() + 1}-01-01`
-      
-      const usageRes = await fetch(`${baseUrl}/dashboard/billing/usage?start_date=${startDate}&end_date=${endDate}`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        next: { revalidate: 10 },
+  for (const url of candidateUrls) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store', // Luôn lấy số dư mới nhất từng giây
       })
 
-      if (usageRes.ok) {
-        const usage = await usageRes.json()
-        const usedUsd = (usage.total_usage || 0) / 100 // total_usage tính bằng cents
-        if (hardLimit > 0) {
-          remainingUsd = Math.max(0, hardLimit - usedUsd)
+      if (res.ok) {
+        const data = await res.json()
+
+        // 1. Trường hợp trả về đối tượng User của NewAPI: { success: true, data: { quota: 2000000 } }
+        if (data?.data?.quota != null) {
+          const quota = Number(data.data.quota)
+          // 500.000 quota = 1 USD trong hệ thống NewAPI
+          actualUsd = quota / 500000
+          break
         }
-      } else if (hardLimit > 0) {
-        remainingUsd = hardLimit
+
+        // 2. Trường hợp trả về Subscription của OpenAI format
+        if (data?.hard_limit_usd != null) {
+          const raw = Number(data.hard_limit_usd)
+          if (raw < 1000000) {
+            actualUsd = raw
+            break
+          } else {
+            actualUsd = raw / 500000
+            break
+          }
+        }
+
+        // 3. Trường hợp trả về trực tiếp balance / quota
+        if (data?.quota != null) {
+          actualUsd = Number(data.quota) / 500000
+          break
+        }
       }
+    } catch {
+      // Thử endpoint tiếp theo
     }
-  } catch (err) {
-    console.error('Error fetching live A6 balance:', err)
   }
 
-  const vnd = Math.round(remainingUsd * rate)
-  return { usd: remainingUsd, vnd }
+  // Làm tròn 2 chữ số thập phân (ví dụ: 4.15 USD)
+  const finalUsd = Number(actualUsd.toFixed(2))
+  const vnd = Math.round(finalUsd * rate)
+
+  return { usd: finalUsd, vnd }
 }
