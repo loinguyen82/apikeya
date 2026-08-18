@@ -1,9 +1,15 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
 import { formatVndFromMicros, formatNumber } from '@/lib/money'
+import { A6LiveSyncCard } from '@/components/A6LiveSyncCard'
 
 export default async function DashboardPage() {
   const { supabase, user } = await requireUser()
+
+  const adminEmails = (process.env.ADMIN_EMAILS || 'loi822004@gmail.com')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+  const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase())
 
   const [{ data: wallet }, { count: requestCount }, { data: recentRequests }] = await Promise.all([
     supabase.from('wallets').select('available_micros,reserved_micros').eq('user_id', user.id).single(),
@@ -32,6 +38,9 @@ export default async function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* Card Quy Đổi Số Dư A6 Tự Động Riêng Cho Admin */}
+      {isAdmin && <A6LiveSyncCard initialUsd={4} />}
 
       <div className="kpis">
         <div className="card kpi">
