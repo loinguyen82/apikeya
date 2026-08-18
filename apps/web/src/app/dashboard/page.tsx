@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
-import { formatVndFromMicros, formatNumber } from '@/lib/money'
-import { A6LiveSyncCard } from '@/components/A6LiveSyncCard'
+import { formatVndFromMicros, formatNumber, formatVnd } from '@/lib/money'
+import { getA6LiveBalance } from '@/lib/a6'
+import { createAdminSupabase } from '@/lib/supabase/admin'
 
 export default async function DashboardPage() {
   const { supabase, user } = await requireUser()
@@ -10,6 +11,24 @@ export default async function DashboardPage() {
     .split(',')
     .map((e) => e.trim().toLowerCase())
   const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase())
+
+  let a6Live: { usd: number; vnd: number } | null = null
+
+  // NẾU LÀ TÀI KHOẢN ADMIN: Tự động kết nối A6API lấy số dư thực tế và đồng bộ tự động 100%
+  if (isAdmin) {
+    a6Live = await getA6LiveBalance()
+    const admin = createAdminSupabase()
+    const targetMicros = BigInt(a6Live.vnd) * 1000n
+
+    // Tự động cập nhật số dư ví trong DB khớp chính xác số dư A6API
+    await admin
+      .from('wallets')
+      .update({
+        available_micros: targetMicros.toString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id)
+  }
 
   const [{ data: wallet }, { count: requestCount }, { data: recentRequests }] = await Promise.all([
     supabase.from('wallets').select('available_micros,reserved_micros').eq('user_id', user.id).single(),
@@ -22,37 +41,64 @@ export default async function DashboardPage() {
       .limit(5),
   ])
 
+  const displayBalance = isAdmin && a6Live ? formatVnd(a6Live.vnd) : formatVndFromMicros(wallet?.available_micros ?? '0')
+
   return (
     <div className="stack" style={{ gap: '28px' }}>
       <div className="row">
         <div>
           <h1>Tổng quan dịch vụ 👋</h1>
-          <p className="muted">Chào mừng bạn! Quản lý số dư, thử nghiệm model và kết nối ứng dụng.</p>
+          <p className="muted">
+            {isAdmin
+              ? 'Tài khoản Quản trị viên — Số dư tự động đồng bộ theo thời gian thực từ A6API.'
+              : 'Chào mừng bạn! Quản lý số dư, thử nghiệm model và kết nối ứng dụng.'}
+          </p>
         </div>
         <div className="row" style={{ gap: '10px' }}>
           <Link href="/dashboard/playground" className="btn secondary">
             Dùng thử ngay →
           </Link>
-          <Link href="/dashboard/billing" className="btn">
-            Nạp tiền số dư
-          </Link>
+          {!isAdmin && (
+            <Link href="/dashboard/billing" className="btn">
+              Nạp tiền số dư
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Card Quy Đổi Số Dư A6 Tự Động Riêng Cho Admin */}
-      {isAdmin && <A6LiveSyncCard initialUsd={4} />}
-
       <div className="kpis">
         <div className="card kpi">
-          <span className="muted">Số dư dùng được (VNĐ)</span>
-          <strong style={{ color: 'var(--primary-hover)', fontSize: '32px' }}>
-            {formatVndFromMicros(wallet?.available_micros ?? '0')}
-          </strong>
+          <div className="row">
+            <span className="muted">Số dư dùng được (VNĐ)</span>
+            {isAdmin && (
+              <span
+                className="badge"
+                style={{
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  color: 'var(--primary-hover)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                }}
+              >
+                ⚡ Auto A6 Live
+              </span>
+            )}
+          </div>
+          <strong style={{ color: 'var(--primary-hover)', fontSize: '32px' }}>{displayBalance}</strong>
           <div className="row" style={{ fontSize: '13px', marginTop: '4px' }}>
-            <span className="muted">Đang tạm giữ: {formatVndFromMicros(wallet?.reserved_micros ?? '0')}</span>
-            <Link href="/dashboard/billing" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-              Nạp thêm →
-            </Link>
+            {isAdmin && a6Live ? (
+              <span style={{ color: 'var(--success)', fontWeight: 500 }}>
+                🪙 Gốc A6: ${a6Live.usd.toFixed(2)} USD (Tỷ giá 25.400đ/$)
+              </span>
+            ) : (
+              <>
+                <span className="muted">Đang tạm giữ: {formatVndFromMicros(wallet?.reserved_micros ?? '0')}</span>
+                <Link href="/dashboard/billing" style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                  Nạp thêm →
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -67,9 +113,24 @@ export default async function DashboardPage() {
         <div className="card kpi" style={{ justifyContent: 'center' }}>
           <span className="muted">Lộ trình sử dụng nhanh</span>
           <div style={{ fontSize: '14px', lineHeight: 1.6, fontWeight: 500 }}>
-            <div>1. <Link href="/dashboard/playground" style={{ color: 'var(--primary)' }}>Dùng thử trên Web</Link></div>
-            <div>2. <Link href="/dashboard/billing" style={{ color: 'var(--primary)' }}>Nạp số dư dịch vụ</Link></div>
-            <div>3. <Link href="/dashboard/api-keys" style={{ color: 'var(--primary)' }}>Tạo API key & Tích hợp</Link></div>
+            <div>
+              1.{' '}
+              <Link href="/dashboard/playground" style={{ color: 'var(--primary)' }}>
+                Dùng thử trên Web
+              </Link>
+            </div>
+            <div>
+              2.{' '}
+              <Link href="/dashboard/models" style={{ color: 'var(--primary)' }}>
+                Xem danh mục Models
+              </Link>
+            </div>
+            <div>
+              3.{' '}
+              <Link href="/dashboard/api-keys" style={{ color: 'var(--primary)' }}>
+                Tạo API key & Tích hợp
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -97,7 +158,9 @@ export default async function DashboardPage() {
               {recentRequests.map((r: any) => (
                 <tr key={r.id}>
                   <td>{new Date(r.created_at).toLocaleString('vi-VN')}</td>
-                  <td><code>{r.model_id}</code></td>
+                  <td>
+                    <code>{r.model_id}</code>
+                  </td>
                   <td>{formatNumber((r.input_tokens ?? 0) + (r.output_tokens ?? 0))}</td>
                   <td style={{ fontWeight: 600 }}>{formatVndFromMicros(r.retail_cost_micros ?? '0')}</td>
                   <td>
