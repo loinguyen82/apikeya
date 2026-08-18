@@ -1,29 +1,8 @@
 'use client'
 
 import React, { useState } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
-
-function getSupabase() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
-
-function translateError(err: string): string {
-  if (!err) return 'Đã có lỗi xảy ra. Vui lòng thử lại.'
-  if (err.includes('Invalid login credentials')) return 'Email hoặc mật khẩu không chính xác.'
-  if (err.includes('User already registered')) return 'Email này đã được đăng ký. Hãy đăng nhập.'
-  if (err.includes('Password should be at least')) return 'Mật khẩu cần tối thiểu 6 ký tự.'
-  if (err.includes('Email not confirmed')) return 'Vui lòng kiểm tra email để xác nhận tài khoản trước khi đăng nhập.'
-  if (err.includes('rate limit')) return 'Thao tác quá nhanh. Vui lòng đợi 30 giây rồi thử lại.'
-  return err
-}
 
 export function LoginForm() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -36,24 +15,24 @@ export function LoginForm() {
     setLoading(true)
 
     try {
-      const supabase = getSupabase()
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       })
 
-      if (authError) {
-        setError(translateError(authError.message))
+      const json = await res.json()
+
+      if (!res.ok || json.error) {
+        setError(json.error || 'Email hoặc mật khẩu không chính xác')
         setLoading(false)
         return
       }
 
-      if (data?.user) {
-        router.push('/dashboard')
-        router.refresh()
-      }
+      // Đăng nhập thành công -> Chuyển vào Dashboard
+      window.location.href = '/dashboard'
     } catch (err: any) {
-      setError(translateError(err.message))
+      setError('Không thể kết nối đến máy chủ. Vui lòng thử lại.')
       setLoading(false)
     }
   }
@@ -133,53 +112,55 @@ export function LoginForm() {
 }
 
 export function SignupForm() {
-  const router = useRouter()
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    setSuccessMsg(null)
     setLoading(true)
 
     try {
-      const supabase = getSupabase()
-      const { data, error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            display_name: displayName.trim(),
-          },
-        },
+      // 1. Tạo tài khoản & tự động confirm qua Admin API
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          displayName: displayName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
       })
 
-      if (authError) {
-        setError(translateError(authError.message))
+      const json = await res.json()
+      if (!res.ok || json.error) {
+        setError(json.error || 'Không thể tạo tài khoản')
         setLoading(false)
         return
       }
 
-      if (data?.session) {
-        // Đăng nhập thành công ngay lập tức
-        router.push('/dashboard')
-        router.refresh()
-      } else if (data?.user) {
-        // Tài khoản đã tạo, thông báo cho user
-        setSuccessMsg('🎉 Tạo tài khoản thành công! Đang chuyển hướng vào bảng điều khiển...')
-        setTimeout(() => {
-          router.push('/login')
-          router.refresh()
-        }, 1500)
+      // 2. Tự động đăng nhập vào session ngay lập tức
+      const loginRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      })
+
+      const loginJson = await loginRes.json()
+      if (!loginRes.ok || loginJson.error) {
+        // Nếu tạo xong nhưng cần chuyển qua trang login
+        window.location.href = '/login'
+        return
       }
+
+      // 3. Chuyển thẳng vào Dashboard
+      window.location.href = '/dashboard'
     } catch (err: any) {
-      setError(translateError(err.message))
+      setError('Đã có lỗi xảy ra. Vui lòng thử lại.')
       setLoading(false)
     }
   }
@@ -198,21 +179,6 @@ export function SignupForm() {
           }}
         >
           {error}
-        </div>
-      )}
-
-      {successMsg && (
-        <div
-          style={{
-            background: 'var(--success-bg)',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            color: 'var(--success)',
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: '14px',
-          }}
-        >
-          {successMsg}
         </div>
       )}
 
@@ -237,7 +203,7 @@ export function SignupForm() {
         <input
           className="input"
           type="email"
-          placeholder="loi822004@gmail.com"
+          placeholder="ten@gmail.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -282,7 +248,7 @@ export function SignupForm() {
       </div>
 
       <button className="btn" type="submit" disabled={loading} style={{ marginTop: '8px', width: '100%' }}>
-        {loading ? 'Đang khởi tạo tài khoản...' : 'Tạo tài khoản & Bắt đầu →'}
+        {loading ? 'Đang tạo tài khoản & đăng nhập...' : 'Tạo tài khoản & Bắt đầu ngay →'}
       </button>
     </form>
   )
