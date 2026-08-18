@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/admin'
 import { formatVndFromMicros, formatNumber } from '@/lib/money'
+import { AdminConverter } from '@/components/AdminConverter'
 
 export default async function AdminPage() {
   const { admin } = await requireAdmin()
@@ -64,6 +65,9 @@ export default async function AdminPage() {
           <strong>{formatNumber(totalRequests ?? 0)}</strong>
         </div>
       </div>
+
+      {/* Bảng Quy Đổi Vốn Upstream A6API ⇋ VNĐ & Lợi Nhuận Thực Tế */}
+      <AdminConverter />
     </div>
   )
 }
