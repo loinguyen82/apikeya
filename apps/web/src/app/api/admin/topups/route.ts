@@ -30,11 +30,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Đơn này đã được duyệt trước đó' }, { status: 400 })
       }
 
-      // Gọi RPC apply_paid_topup chuẩn của hệ thống để cộng tiền vào ví và ghi sổ cái
+      // Gia hạn hạn đơn để không bị chặn bởi điều kiện expires_at
+      await admin
+        .from('topups')
+        .update({
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'pending',
+        })
+        .eq('id', topup.id)
+
+      // Gọi RPC apply_paid_topup chuẩn với đúng 2 tham số: p_topup_id và p_external_id
       const { data, error: rpcErr } = await admin.rpc('apply_paid_topup', {
         p_topup_id: topup.id,
-        p_external_tx_id: externalTxId || `manual_approved_${Date.now()}`,
-        p_actual_vnd_paid: topup.payable_vnd,
+        p_external_id: externalTxId || `manual_approved_${Date.now()}`,
       })
 
       if (rpcErr) {
@@ -98,6 +106,7 @@ export async function POST(req: NextRequest) {
           payable_vnd: amount,
           payment_provider: 'admin_manual_grant',
           status: 'pending',
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         })
         .select('id')
         .single()
@@ -109,8 +118,7 @@ export async function POST(req: NextRequest) {
       // Duyệt và cộng tiền vào ví
       const { error: rpcErr } = await admin.rpc('apply_paid_topup', {
         p_topup_id: topupRow.id,
-        p_external_tx_id: `admin_grant_${note ? encodeURIComponent(note) : 'manual'}_${Date.now()}`,
-        p_actual_vnd_paid: amount,
+        p_external_id: `admin_grant_${note ? encodeURIComponent(note) : 'manual'}_${Date.now()}`,
       })
 
       if (rpcErr) {
