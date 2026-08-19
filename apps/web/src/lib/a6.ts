@@ -2,10 +2,11 @@
  * Tự động kết nối và lấy số dư THỰC TẾ từ tài khoản A6API (qua API User Self / Quota chuẩn)
  */
 export async function getA6LiveBalance(): Promise<{ usd: number; vnd: number }> {
-  const apiKey = process.env.A6API_KEY || 'sk-kU4qv9ydZ3os8PT60TkM8JvyuKxIdx6MFSzh63JucqLs00dE'
+  const apiKey = process.env.A6API_KEY
+  if (!apiKey) throw new Error('A6API_KEY_NOT_CONFIGURED')
   const rate = 25400 // 1 USD = 25.400 VND
 
-  let actualUsd = 0
+  let actualUsd: number | null = null
 
   // Danh sách các endpoint lấy số dư thực tế của hệ thống A6API (NewAPI / OneAPI backend)
   const candidateUrls = [
@@ -58,6 +59,10 @@ export async function getA6LiveBalance(): Promise<{ usd: number; vnd: number }> 
     } catch {
       // Thử endpoint tiếp theo
     }
+  }
+
+  if (actualUsd == null || !Number.isFinite(actualUsd) || actualUsd < 0) {
+    throw new Error('A6_BALANCE_UNAVAILABLE')
   }
 
   // Làm tròn 2 chữ số thập phân (ví dụ: 4.15 USD)

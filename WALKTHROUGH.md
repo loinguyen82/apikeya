@@ -1,75 +1,62 @@
-# Hướng Dẫn Vận Hành & Tổng Kết Hệ Thống AI API Reseller V4 (`apikeya`)
+# Hướng Dẫn Vận Hành & Tính Năng Dự Án AI API Reseller V4
 
-Dự án **AI API Reseller V4** đã được khởi tạo hoàn chỉnh tại thư mục `C:\Users\loi82\Downloads\apikeya` tuân thủ 100% theo đặc tả `ai_api_reseller_v4_executable_spec_full.md`.
-
----
-
-## 1. Tóm Tắt Các Thành Phần Đã Triển Khai
-
-### 🗄️ Database & Migrations (`supabase/`)
-- `migrations/001_core.sql`: Khởi tạo 10 bảng lõi (`profiles`, `wallets`, `wallet_ledger`, `api_keys`, `providers`, `models`, `provider_models`, `api_requests`, `provider_attempts`, `topups`, `admin_audit_log`) với CHECK constraints và trigger `on_auth_user_created`.
-- `migrations/002_rpc.sql`: 4 hàm RPC Security Definer atomic:
-  - `reserve_api_request`: Tạm giữ số dư trước khi gọi upstream.
-  - `settle_api_request`: Quyết toán chi phí theo token thực tế, hoàn trả số dư thừa.
-  - `release_api_request`: Hoàn trả tiền tạm giữ khi request thất bại an toàn.
-  - `apply_paid_topup`: Cộng tiền nạp + bonus tự động vào ví.
-- `migrations/003_rls.sql`: Thiết lập chính sách bảo mật Row-Level Security.
-- `seed.sql`: Cung cấp danh mục mô hình khởi tạo (`kimi-k2.6`, `claude-sonnet-5`, `gpt-5.6-sol`) và cấu hình định tuyến cho A6API / Neco.
-
-### 📦 Gói Logic Nghiệp Vụ (`packages/`)
-- `packages/contracts`: Định nghĩa chuẩn TypeScript cho types, DTOs, Error Codes.
-- `packages/core`:
-  - `money.ts`: Xử lý số học `bigint` chính xác với `microVND` và `ceilDiv`.
-  - `pricing.ts`: Tính cước bán lẻ `chargeForUsage` (hỗ trợ `flat_total` và `split_io`) và giá vốn `upstreamCostForUsage`.
-  - `reservation.ts`: Ước tính token đầu vào, áp dụng trần output và padding BPS.
-  - `retry-policy.ts`: Phân loại lỗi failover an toàn `classifyRetry`.
-
-### ⚡ Cổng API Gateway (`apps/gateway/`)
-- Cổng Hono độc lập với các endpoint:
-  - `GET /v1/models`: Danh sách model khả dụng.
-  - `POST /v1/chat/completions`: Chat completion OpenAI-compatible, xác thực API Key (`ak_live_...`), định tuyến đa nguồn, hỗ trợ cả JSON & Streaming SSE với kỹ thuật stream teeing và background settlement.
-  - `POST /internal/playground/chat`: Cổng nội bộ cho phiên web không cần API Key.
-
-### 💻 Ứng Dụng Web UI (`apps/web/`)
-- **Customer Portal**:
-  - Landing page giới thiệu trực quan, minh bạch biểu phí VNĐ.
-  - Trang Đăng nhập & Đăng ký tài khoản.
-  - Trang Tổng quan Dashboard (Số dư dùng được, KPIs, lịch sử).
-  - Trang Dùng thử (Playground interactive).
-  - Trang Danh mục mô hình AI.
-  - Trang Quản lý API Key (Cơ chế sinh key bảo mật 1-lần).
-  - Trang Nạp tiền (Hỗ trợ VietQR với các gói nạp linh hoạt).
-  - Trang Báo cáo chi tiêu theo từng request.
-- **Admin Portal** (`/admin`):
-  - Dashboard KPIs (Doanh thu bán lẻ, Giá vốn upstream, Lợi nhuận gộp Gross Margin, Đếm số lượt Ambiguous cần đối soát).
-  - Quản lý danh mục Models & Tuyến Upstream (Provider Routes).
-  - Bảng kiểm toán và đối soát Requests toàn hệ thống.
+Tài liệu này tổng hợp toàn bộ các tính năng đã được hoàn thiện và hướng dẫn vận hành hệ thống thanh toán qua STK/VietQR và quản trị Admin.
 
 ---
 
-## 2. Các Bước Kích Hoạt & Sử Dụng
+## 1. Luồng Thanh Toán STK / VietQR & Duyệt Tiền Admin
 
-### Bước 1: Chạy Migrations trên Supabase
-1. Mở Supabase Project Dashboard -> Vào mục **SQL Editor**.
-2. Copy và chạy lần lượt 4 file:
-   - `supabase/migrations/001_core.sql`
-   - `supabase/migrations/002_rpc.sql`
-   - `supabase/migrations/003_rls.sql`
-   - `supabase/seed.sql`
+### A. Khách Hàng Nạp Tiền:
+1. Khách truy cập vào **Nạp tiền VietQR** (`/dashboard/billing`).
+2. Chọn gói nạp (50k, 100k, 200k, 500k +5%, 1M +10%, 2M +15%).
+3. Hệ thống tạo mã **VietQR động** chuẩn NAPAS kèm sẵn số tiền và cú pháp `NAP <MÃ_ĐƠN>`.
+4. Khách mở App ngân hàng quét mã QR hoặc bấm nút **Sao chép** nhanh STK và Nội dung chuyển khoản.
 
-### Bước 2: Điền Biến Môi Trường
-1. Đổi tên `.env.example` thành `.env.local` trong `apps/web`:
-   ```bash
-   cp .env.example apps/web/.env.local
-   ```
-2. Điền `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `A6API_KEY`, `NECO_KEY`, `ADMIN_EMAILS`.
+### B. Admin Kiểm Tra & Duyệt Tiền 1-Click:
+1. Bạn đăng nhập tài khoản Admin (`loi822004@gmail.com`) $\rightarrow$ Vào **[Quản lý Nạp tiền](/admin/topups)**.
+2. Tại tab **"⏳ Đơn Chờ Duyệt"**:
+   - Bạn thấy danh sách các đơn khách vừa tạo (Email, Số tiền, Cú pháp chuyển khoản, Thời gian).
+   - Kiểm tra tài khoản ngân hàng cá nhân của bạn thấy tiền về.
+   - Bấm nút **"✓ Duyệt & Cộng tiền"** $\rightarrow$ Tiền lập tức được nạp vào ví của khách, khách dùng được ngay!
+3. Tại tab **"➕ Nạp / Thưởng Credit Thủ Công"**:
+   - Bạn có thể nhập bất kỳ Email nào + Số tiền VNĐ để nạp credit trực tiếp (dành cho nạp riêng qua Zalo/Facebook hoặc tặng quà khách).
 
-### Bước 3: Khởi Động
-```bash
-npm install
-# Khởi động Web App
-npm run dev:web
-# Khởi động Gateway (Terminal khác)
-npm run dev:gateway
+---
+
+## 2. Cách Thay Đổi STK Ngân Hàng Của Bạn
+
+Bạn có thể chỉnh sửa thông tin STK bất kỳ lúc nào bằng 1 trong 2 cách:
+
+### Cách 1: Sửa trong file `apps/web/src/lib/bank-config.ts`
+```typescript
+export const defaultBankConfig: BankConfig = {
+  bankId: 'MB', // Mã ngân hàng (MB, VCB, TCB, VPB, ACB, TPB, ICB,...)
+  bankName: 'Ngân hàng Quân Đội (MBBank)',
+  accountNo: '0987654321', // Số tài khoản thật của bạn
+  accountName: 'NGUYEN VAN LOI', // Tên chủ tài khoản in hoa không dấu
+}
 ```
-Truy cập `http://localhost:3000` để trải nghiệm hệ thống!
+
+### Cách 2: Cài đặt trên Vercel Environment Variables:
+- `NEXT_PUBLIC_BANK_ID`: Mã ngân hàng (ví dụ `MB` hoặc `VCB`)
+- `NEXT_PUBLIC_BANK_NAME`: Tên ngân hàng
+- `NEXT_PUBLIC_BANK_ACCOUNT_NO`: Số tài khoản của bạn
+- `NEXT_PUBLIC_BANK_ACCOUNT_NAME`: Tên chủ tài khoản của bạn
+
+---
+
+## 3. Danh Mục Các Trang Hệ Thống
+
+| Trang | Đường dẫn | Mục đích |
+|---|---|---|
+| **Trang chủ** | `/` | Giới thiệu, bảng giá VNĐ/1M token |
+| **Dùng thử** | `/dashboard/playground` | Chat AI trực tiếp trên web không cần API Key |
+| **Quản lý API Key**| `/dashboard/api-keys` | Tạo key `ak_live_...`, copy 1-click, thu hồi key |
+| **Nạp tiền VietQR**| `/dashboard/billing` | Quét mã VietQR chuyển khoản ngân hàng |
+| **Lịch sử Chi tiêu**| `/dashboard/usage` | Báo cáo chi tiết từng request, input/output tokens |
+| **Danh mục Models**| `/dashboard/models` | Xem thông số kỹ thuật và giá của 6 model AI |
+| **Tài liệu API** | `/docs` | Hướng dẫn tích hợp Python, Node.js, cURL, Cursor IDE |
+| **Admin KPIs** | `/admin` | Tổng quan doanh thu, chi phí A6, lợi nhuận gộp |
+| **Admin Nạp tiền** | `/admin/topups` | Duyệt đơn nạp tiền 1-click & cộng credit thủ công |
+| **Admin Models** | `/admin/models` | Cấu hình định tuyến và giá bán lẻ |
+| **Admin Requests** | `/admin/requests` | Đối soát toàn bộ lượt gọi API toàn hệ thống |

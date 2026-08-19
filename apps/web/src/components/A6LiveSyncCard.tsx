@@ -23,7 +23,9 @@ export function A6LiveSyncCard({ initialUsd = 4 }: { initialUsd?: number }) {
 
       const json = await res.json()
 
-      if (json.ok) {
+      if (json.ok && json.synced === false) {
+        setStatusMsg(`Đã đọc số dư A6API: ${new Intl.NumberFormat('vi-VN').format(json.vnd)}đ. Ví ứng dụng không bị ghi đè.`)
+      } else if (json.ok) {
         setStatusMsg(`🎉 Đã đồng bộ thành công! Số dư ví của bạn đã được cập nhật thành ${new Intl.NumberFormat('vi-VN').format(json.vnd)}đ`)
         setTimeout(() => {
           window.location.reload()

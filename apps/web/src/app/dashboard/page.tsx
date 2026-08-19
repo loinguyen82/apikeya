@@ -2,32 +2,22 @@ import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
 import { formatVndFromMicros, formatNumber, formatVnd } from '@/lib/money'
 import { getA6LiveBalance } from '@/lib/a6'
-import { createAdminSupabase } from '@/lib/supabase/admin'
+import { isAdminUser } from '@/lib/admin'
 
 export default async function DashboardPage() {
   const { supabase, user } = await requireUser()
 
-  const adminEmails = (process.env.ADMIN_EMAILS || 'loi822004@gmail.com')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-  const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase())
+  const isAdmin = await isAdminUser(supabase, user)
 
   let a6Live: { usd: number; vnd: number } | null = null
 
-  // NẾU LÀ TÀI KHOẢN ADMIN: Tự động kết nối A6API lấy số dư thực tế và đồng bộ tự động 100%
+  // Admin chỉ xem số dư live của A6; số dư ví ứng dụng vẫn do ledger quyết toán.
   if (isAdmin) {
-    a6Live = await getA6LiveBalance()
-    const admin = createAdminSupabase()
-    const targetMicros = BigInt(a6Live.vnd) * 1000n
-
-    // Tự động cập nhật số dư ví trong DB khớp chính xác số dư A6API
-    await admin
-      .from('wallets')
-      .update({
-        available_micros: targetMicros.toString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id)
+    try {
+      a6Live = await getA6LiveBalance()
+    } catch {
+      a6Live = null
+    }
   }
 
   const [{ data: wallet }, { count: requestCount }, { data: recentRequests }] = await Promise.all([
@@ -91,6 +81,8 @@ export default async function DashboardPage() {
               <span style={{ color: 'var(--success)', fontWeight: 500 }}>
                 🪙 Gốc A6: ${a6Live.usd.toFixed(2)} USD (Tỷ giá 25.400đ/$)
               </span>
+            ) : isAdmin ? (
+              <span className="muted">A6 live balance hiện chưa khả dụng.</span>
             ) : (
               <>
                 <span className="muted">Đang tạm giữ: {formatVndFromMicros(wallet?.reserved_micros ?? '0')}</span>

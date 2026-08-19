@@ -369,6 +369,10 @@ begin
   if not found then raise exception 'TOPUP_NOT_FOUND'; end if;
   if t.status='paid' then return t; end if;
   if t.status<>'pending' then raise exception 'TOPUP_NOT_PENDING'; end if;
+  if t.expires_at <= now() then
+    update public.topups set status='expired' where id=t.id returning * into t;
+    return t;
+  end if;
   
   update public.wallets set available_micros=available_micros+t.amount_micros+t.bonus_micros, updated_at=now() where user_id=t.user_id;
   insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key)

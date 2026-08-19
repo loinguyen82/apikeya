@@ -1,15 +1,68 @@
 import type { ChatCompletionRequest, ProviderFailure, TokenUsage } from '@aiapi/contracts'
-import type { ProviderAdapter, ProviderSuccess } from './types'
+import type { ProviderAdapter, ProviderSuccess } from './types.js'
 import { classifyRetry } from '@aiapi/core'
 
 function readUsage(payload: any): TokenUsage {
   const usage = payload?.usage
-  const inputTokens = Number(usage?.prompt_tokens ?? usage?.input_tokens ?? 0)
-  const outputTokens = Number(usage?.completion_tokens ?? usage?.output_tokens ?? 0)
-  if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) {
+  if (!usage || typeof usage !== 'object') {
+    throw new Error('Upstream thiếu usage hợp lệ')
+  }
+
+  const inputRaw = usage.prompt_tokens ?? usage.input_tokens
+  const outputRaw = usage.completion_tokens ?? usage.output_tokens
+  const inputTokens = Number(inputRaw)
+  const outputTokens = Number(outputRaw)
+  if (
+    (typeof inputRaw !== 'number' && typeof inputRaw !== 'string') ||
+    (typeof outputRaw !== 'number' && typeof outputRaw !== 'string') ||
+    (typeof inputRaw === 'string' && inputRaw.trim() === '') ||
+    (typeof outputRaw === 'string' && outputRaw.trim() === '') ||
+    !Number.isSafeInteger(inputTokens) ||
+    !Number.isSafeInteger(outputTokens) ||
+    inputTokens < 0 ||
+    outputTokens < 0
+  ) {
     throw new Error('Upstream thiếu usage hợp lệ')
   }
   return { inputTokens, outputTokens }
+}
+
+function trackStream(
+  stream: ReadableStream<Uint8Array>,
+  onComplete: () => void,
+): ReadableStream<Uint8Array> {
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  let completed = false
+  const complete = () => {
+    if (completed) return
+    completed = true
+    onComplete()
+  }
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      reader ??= stream.getReader()
+      try {
+        const result = await reader.read()
+        if (result.done) {
+          controller.close()
+          complete()
+        } else {
+          controller.enqueue(result.value)
+        }
+      } catch (error) {
+        controller.error(error)
+        complete()
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader?.cancel(reason)
+      } finally {
+        complete()
+      }
+    },
+  })
 }
 
 export class OpenAICompatibleAdapter implements ProviderAdapter {
@@ -40,32 +93,57 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
         body: JSON.stringify(body),
         signal: controller.signal,
       })
-      clearTimeout(timeout)
       if (!response.ok) {
-        const declaredNoCharge = args.safeNoChargeStatuses.includes(response.status)
-        const failure: ProviderFailure = {
-          providerId: this.id,
-          code: `UPSTREAM_HTTP_${response.status}`,
-          message: (await response.text()).slice(0, 500),
-          httpStatus: response.status,
-          retryClass: classifyRetry({
-            responseStarted: false,
-            streamStarted: false,
-            kind: 'http',
-            adapterDeclaredNoCharge: declaredNoCharge,
+        try {
+          const declaredNoCharge = args.safeNoChargeStatuses.includes(response.status)
+          const failure: ProviderFailure = {
+            providerId: this.id,
+            code: `UPSTREAM_HTTP_${response.status}`,
+            message: (await response.text()).slice(0, 500),
             httpStatus: response.status,
-          }),
+            retryClass: classifyRetry({
+              responseStarted: false,
+              streamStarted: false,
+              kind: 'http',
+              adapterDeclaredNoCharge: declaredNoCharge,
+              httpStatus: response.status,
+            }),
+          }
+          return failure
+        } finally {
+          clearTimeout(timeout)
         }
-        return failure
       }
       const providerRequestId = response.headers.get('x-request-id') ?? undefined
       if (args.body.stream) {
         if (!response.body) throw new Error('Upstream stream body missing')
         const [clientStream, meterStream] = response.body.tee()
-        return { kind: 'stream', response, clientStream, meterStream, providerRequestId }
+        let openStreams = 2
+        const onComplete = () => {
+          openStreams -= 1
+          if (openStreams === 0) clearTimeout(timeout)
+        }
+        return {
+          kind: 'stream',
+          response,
+          clientStream: trackStream(clientStream, onComplete),
+          meterStream: trackStream(meterStream, onComplete),
+          providerRequestId,
+        }
       }
-      const payload = (await response.json()) as Record<string, unknown>
-      return { kind: 'json', response, payload, usage: readUsage(payload), providerRequestId }
+      try {
+        const payload = (await response.json()) as Record<string, unknown>
+        return { kind: 'json', response, payload, usage: readUsage(payload), providerRequestId }
+      } catch (error) {
+        return {
+          providerId: this.id,
+          code: 'UPSTREAM_INVALID_RESPONSE',
+          message: error instanceof Error ? error.message : 'Invalid upstream response',
+          retryClass: classifyRetry({ responseStarted: true, streamStarted: false, kind: 'parse' }),
+        }
+      } finally {
+        clearTimeout(timeout)
+      }
     } catch (error) {
       clearTimeout(timeout)
       const isTimeout = controller.signal.aborted
@@ -87,25 +165,32 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     const decoder = new TextDecoder()
     let buffer = ''
     let lastUsage: TokenUsage | null = null
+    const consumeEvent = (event: string) => {
+      for (const line of event.split(/\r?\n/)) {
+        if (!line.startsWith('data:')) continue
+        const raw = line.slice(5).trim()
+        if (!raw || raw === '[DONE]') continue
+        let payload: any
+        try {
+          payload = JSON.parse(raw)
+        } catch {
+          continue
+        }
+        if (payload.usage) lastUsage = readUsage(payload)
+      }
+    }
+
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split('\n\n')
-      buffer = events.pop() ?? ''
-      for (const event of events) {
-        for (const line of event.split('\n')) {
-          if (!line.startsWith('data:')) continue
-          const raw = line.slice(5).trim()
-          if (!raw || raw === '[DONE]') continue
-          try {
-            const payload = JSON.parse(raw)
-            if (payload.usage) lastUsage = readUsage(payload)
-          } catch {
-            /* ignore non-json event */
-          }
-        }
+      if (done) {
+        buffer += decoder.decode()
+        consumeEvent(buffer)
+        break
       }
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split(/\r?\n\r?\n/)
+      buffer = events.pop() ?? ''
+      for (const event of events) consumeEvent(event)
     }
     if (!lastUsage) throw new Error('Không nhận được usage cuối stream')
     return lastUsage

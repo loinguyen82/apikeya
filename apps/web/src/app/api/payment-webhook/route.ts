@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get('x-webhook-signature')
   const secret = process.env.PAYMENT_WEBHOOK_SECRET
 
-  if (secret && signature !== secret) {
+  if (!secret || !signature || signature !== secret) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
@@ -20,13 +20,16 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminSupabase()
-  const { error } = await admin.rpc('apply_paid_topup', {
+  const { data, error } = await admin.rpc('apply_paid_topup', {
     p_topup_id: payload.topup_id,
     p_external_id: payload.external_id,
   })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'topup_apply_failed' }, { status: 500 })
+  }
+  if (data?.status !== 'paid') {
+    return NextResponse.json({ error: 'topup_not_paid', status: data?.status ?? 'unknown' }, { status: 409 })
   }
 
   return NextResponse.json({ ok: true, topup_id: payload.topup_id, status: 'paid' })

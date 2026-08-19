@@ -1,11 +1,11 @@
 import type { ChatCompletionRequest, ProviderFailure } from '@aiapi/contracts'
 import { chargeForUsage, computeReserveMicros, upstreamCostForUsage } from '@aiapi/core'
-import type { Env } from '../env'
-import { adminDb } from '../repositories/supabase'
-import { loadRuntimeModel } from './catalog'
-import { markAmbiguous, releaseRequest, reserveRequest, settleRequest } from './billing'
-import { newId } from '../utils/id'
-import { OpenAICompatibleAdapter } from '../providers/openai-compatible'
+import type { Env } from '../env.js'
+import { adminDb } from '../repositories/supabase.js'
+import { loadRuntimeModel } from './catalog.js'
+import { markAmbiguous, releaseRequest, reserveRequest, settleRequest } from './billing.js'
+import { newId } from '../utils/id.js'
+import { OpenAICompatibleAdapter } from '../providers/openai-compatible.js'
 
 function retailPrice(model: Awaited<ReturnType<typeof loadRuntimeModel>>) {
   if (model.pricingMode === 'flat_total') {
@@ -24,6 +24,21 @@ function retailPrice(model: Awaited<ReturnType<typeof loadRuntimeModel>>) {
 
 function upstreamSecrets(env: Env): Record<string, string> {
   return { A6API_KEY: env.A6API_KEY, NECO_KEY: env.NECO_KEY }
+}
+
+async function markAmbiguousBestEffort(db: ReturnType<typeof adminDb>, requestId: string, errorCode: string) {
+  try {
+    await markAmbiguous(db, requestId, errorCode)
+  } catch (error) {
+    console.error('failed to mark request ambiguous', { requestId, error })
+  }
+}
+
+function internalFailure(requestId: string, message: string): Response {
+  return Response.json(
+    { error: { message, type: 'server_error', request_id: requestId } },
+    { status: 500, headers: { 'x-request-id': requestId } },
+  )
 }
 
 export async function executeChat(args: {
@@ -80,7 +95,14 @@ export async function executeChat(args: {
   for (const candidate of model.providers) {
     if (args.body.stream && !candidate.supportsStreamUsage) continue
     const adapter = new OpenAICompatibleAdapter(candidate.providerId)
-    await db.from('api_requests').update({ status: 'dispatching', provider_id: candidate.providerId }).eq('id', requestId)
+    const { error: dispatchError } = await db
+      .from('api_requests')
+      .update({ status: 'dispatching', provider_id: candidate.providerId })
+      .eq('id', requestId)
+    if (dispatchError) {
+      await markAmbiguousBestEffort(db, requestId, 'DISPATCH_AUDIT_WRITE_FAILED')
+      return internalFailure(requestId, 'Gateway không thể ghi nhận trạng thái request')
+    }
     const { data: attempt, error: attemptError } = await db
       .from('provider_attempts')
       .insert({
@@ -96,17 +118,8 @@ export async function executeChat(args: {
       .single()
 
     if (attemptError || !attempt) {
-      await markAmbiguous(db, requestId, 'ATTEMPT_AUDIT_WRITE_FAILED')
-      return Response.json(
-        {
-          error: {
-            message: 'Không thể ghi nhận lượt gọi upstream an toàn',
-            type: 'server_error',
-            request_id: requestId,
-          },
-        },
-        { status: 500, headers: { 'x-request-id': requestId } }
-      )
+      await markAmbiguousBestEffort(db, requestId, 'ATTEMPT_AUDIT_WRITE_FAILED')
+      return internalFailure(requestId, 'Gateway không thể ghi nhận lượt gọi upstream an toàn')
     }
 
     const result = await adapter.invokeChat({
@@ -120,7 +133,7 @@ export async function executeChat(args: {
 
     if ('retryClass' in result) {
       lastFailure = result
-      await db
+      const { error: attemptUpdateError } = await db
         .from('provider_attempts')
         .update({
           status: result.retryClass === 'safe' ? 'safe_failed' : 'ambiguous_failed',
@@ -129,9 +142,14 @@ export async function executeChat(args: {
         })
         .eq('id', attempt.id)
 
+      if (attemptUpdateError) {
+        await markAmbiguousBestEffort(db, requestId, 'PROVIDER_FAILURE_AUDIT_WRITE_FAILED')
+        return internalFailure(requestId, 'Gateway không thể ghi nhận kết quả upstream')
+      }
+
       if (result.retryClass === 'safe') continue
 
-      await markAmbiguous(db, requestId, result.code)
+      await markAmbiguousBestEffort(db, requestId, result.code)
       return Response.json(
         {
           error: {
@@ -152,7 +170,7 @@ export async function executeChat(args: {
         result.usage.inputTokens,
         result.usage.outputTokens
       )
-      await db
+      const { error: attemptUpdateError } = await db
         .from('provider_attempts')
         .update({
           status: 'succeeded',
@@ -163,28 +181,44 @@ export async function executeChat(args: {
         })
         .eq('id', attempt.id)
 
-      await settleRequest(db, {
-        requestId,
-        retailCostMicros: retailCost,
-        upstreamCostMicros: upstreamCost,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        providerId: candidate.providerId,
-        providerRequestId: result.providerRequestId,
-      })
+      if (attemptUpdateError) {
+        await markAmbiguousBestEffort(db, requestId, 'PROVIDER_SUCCESS_AUDIT_WRITE_FAILED')
+        return internalFailure(requestId, 'Gateway không thể ghi nhận kết quả upstream')
+      }
+
+      try {
+        await settleRequest(db, {
+          requestId,
+          retailCostMicros: retailCost,
+          upstreamCostMicros: upstreamCost,
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          providerId: candidate.providerId,
+          providerRequestId: result.providerRequestId,
+        })
+      } catch (error) {
+        console.error('request settlement failed after provider success', { requestId, error })
+        await markAmbiguousBestEffort(db, requestId, 'SETTLEMENT_RECONCILE_REQUIRED')
+        return internalFailure(requestId, 'Gateway chưa thể xác nhận quyết toán request')
+      }
 
       const payload = { ...result.payload, gateway_request_id: requestId }
       return Response.json(payload, { status: 200, headers: { 'x-request-id': requestId } })
     }
 
-    await db
+    const { error: streamingAttemptError } = await db
       .from('provider_attempts')
       .update({ status: 'streaming', provider_request_id: result.providerRequestId ?? null })
       .eq('id', attempt.id)
-    await db
+    const { error: streamingRequestError } = await db
       .from('api_requests')
       .update({ status: 'streaming', provider_id: candidate.providerId, provider_request_id: result.providerRequestId ?? null })
       .eq('id', requestId)
+    if (streamingAttemptError || streamingRequestError) {
+      await Promise.allSettled([result.clientStream.cancel(), result.meterStream.cancel()])
+      await markAmbiguousBestEffort(db, requestId, 'STREAMING_AUDIT_WRITE_FAILED')
+      return internalFailure(requestId, 'Gateway không thể ghi nhận trạng thái stream')
+    }
 
     const backgroundPromise = (async () => {
       try {
@@ -196,7 +230,7 @@ export async function executeChat(args: {
           usage.inputTokens,
           usage.outputTokens
         )
-        await db
+        const { error: completionAuditError } = await db
           .from('provider_attempts')
           .update({
             status: 'succeeded',
@@ -206,17 +240,24 @@ export async function executeChat(args: {
           })
           .eq('id', attempt.id)
 
-        await settleRequest(db, {
-          requestId,
-          retailCostMicros: retailCost,
-          upstreamCostMicros: upstreamCost,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          providerId: candidate.providerId,
-          providerRequestId: result.providerRequestId,
-        })
+        if (completionAuditError) throw new Error('STREAM_COMPLETION_AUDIT_WRITE_FAILED')
+
+        try {
+          await settleRequest(db, {
+            requestId,
+            retailCostMicros: retailCost,
+            upstreamCostMicros: upstreamCost,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            providerId: candidate.providerId,
+            providerRequestId: result.providerRequestId,
+          })
+        } catch (error) {
+          console.error('stream settlement failed after provider success', { requestId, error })
+          throw new Error('STREAM_SETTLEMENT_RECONCILE_REQUIRED')
+        }
       } catch (e) {
-        await db
+        const { error: attemptFailureAuditError } = await db
           .from('provider_attempts')
           .update({
             status: 'ambiguous_failed',
@@ -224,7 +265,10 @@ export async function executeChat(args: {
             completed_at: new Date().toISOString(),
           })
           .eq('id', attempt.id)
-        await markAmbiguous(db, requestId, 'STREAM_USAGE_RECONCILE_REQUIRED')
+        if (attemptFailureAuditError) {
+          console.error('failed to record stream reconciliation failure', { requestId, error: attemptFailureAuditError })
+        }
+        await markAmbiguousBestEffort(db, requestId, 'STREAM_USAGE_RECONCILE_REQUIRED')
       }
     })()
 
@@ -242,7 +286,13 @@ export async function executeChat(args: {
     })
   }
 
-  await releaseRequest(db, requestId, lastFailure?.code ?? 'NO_HEALTHY_PROVIDER')
+  try {
+    await releaseRequest(db, requestId, lastFailure?.code ?? 'NO_HEALTHY_PROVIDER')
+  } catch (error) {
+    console.error('request release failed', { requestId, error })
+    await markAmbiguousBestEffort(db, requestId, 'RELEASE_RECONCILE_REQUIRED')
+    return internalFailure(requestId, 'Gateway chưa thể hoàn tất trạng thái request')
+  }
   return Response.json(
     { error: { message: 'Hiện chưa có nguồn khả dụng cho model này', type: 'upstream_unavailable' } },
     { status: 503, headers: { 'x-request-id': requestId } }

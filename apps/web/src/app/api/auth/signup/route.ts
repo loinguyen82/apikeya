@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
+import { ensureUserAccount } from '@/lib/bootstrap-user'
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminSupabase()
 
-    // Tạo user với email_confirm: true để tự động xác thực ngay lập tức, không bao giờ bị chặn
+    // Tạo user với email_confirm: true để tự động xác thực ngay lập tức
     const { data, error } = await admin.auth.admin.createUser({
       email: email.trim().toLowerCase(),
       password,
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Email này đã được đăng ký. Vui lòng đăng nhập.' }, { status: 400 })
       }
       return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    // Tự động khởi tạo Ví tiền và Profile ngay lập tức
+    if (data?.user) {
+      await ensureUserAccount(admin, data.user, { seedBalance: true, displayName: displayName || email.split('@')[0] })
     }
 
     return NextResponse.json({ ok: true, user: data.user })

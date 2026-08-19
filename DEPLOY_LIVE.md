@@ -107,6 +107,7 @@ git push -u origin main
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR_PROJECT.vercel.app` ← Vercel sẽ cho URL sau khi deploy |
 | `GATEWAY_INTERNAL_TOKEN` | Token nội bộ bí mật |
 | `ADMIN_EMAILS` | Email admin của bạn (vd: loi822004@gmail.com) |
+| `A6API_KEY` | API key A6API dùng cho admin live balance/sync |
 | `PAYMENT_WEBHOOK_SECRET` | Secret webhook nạp tiền |
 
 4. Nhấn **Deploy** → Đợi 1-2 phút.

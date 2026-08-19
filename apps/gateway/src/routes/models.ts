@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
-import type { Env } from '../env'
-import { adminDb } from '../repositories/supabase'
+import type { Env } from '../env.js'
+import { adminDb } from '../repositories/supabase.js'
 
 export const modelsRoute = new Hono<{ Bindings: Env }>()
 
@@ -16,7 +16,7 @@ modelsRoute.get('/', async (c) => {
 
   return c.json({
     object: 'list',
-    data: (data ?? []).map((m) => ({
+    data: (data ?? []).map((m: { id: string; display_name: string; status: string }) => ({
       id: m.id,
       object: 'model',
       owned_by: 'gateway',

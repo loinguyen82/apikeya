@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { createAdminSupabase } from '@/lib/supabase/admin'
+import { isAdminUser } from '@/lib/admin'
+import { getA6LiveBalance } from '@/lib/a6'
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,7 +10,10 @@ export async function POST(req: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    if (!user || user.email?.toLowerCase() !== (process.env.ADMIN_EMAILS || 'loi822004@gmail.com').toLowerCase()) {
+    if (!user) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    }
+    if (!(await isAdminUser(supabase, user))) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
     }
 
@@ -17,52 +21,31 @@ export async function POST(req: NextRequest) {
     let usdBalance = body.usd != null ? Number(body.usd) : null
     const rate = Number(body.rate) || 25400
 
-    // Nếu không truyền USD tùy chỉnh, thử gọi A6API để lấy số dư trực tiếp
+    // Nếu không truyền USD tùy chỉnh, lấy số dư live; lỗi upstream không được biến thành số dư giả.
     if (usdBalance == null) {
       try {
-        const a6Res = await fetch('https://api.a6api.com/v1/dashboard/billing/subscription', {
-          headers: {
-            Authorization: `Bearer ${process.env.A6API_KEY || 'sk-kU4qv9ydZ3os8PT60TkM8JvyuKxIdx6MFSzh63JucqLs00dE'}`,
-          },
-        })
-        if (a6Res.ok) {
-          const a6Data = await a6Res.json()
-          usdBalance = a6Data.hard_limit_usd || a6Data.system_hard_limit_usd || 4.0
-        }
+        usdBalance = (await getA6LiveBalance()).usd
       } catch {
-        usdBalance = 4.0 // Fallback mặc định 4$
+        return NextResponse.json({ error: 'A6 balance unavailable' }, { status: 502 })
       }
     }
 
-    if (usdBalance == null || isNaN(usdBalance)) {
-      usdBalance = 4.0
+    if (usdBalance == null || !Number.isFinite(usdBalance) || usdBalance < 0) {
+      return NextResponse.json({ error: 'invalid_a6_balance' }, { status: 400 })
     }
 
     const vnd = Math.round(usdBalance * rate)
-    const micros = BigInt(vnd) * 1000n
-
-    // Cập nhật số dư VNĐ cho ví của Admin
-    const admin = createAdminSupabase()
-    const { error: updateError } = await admin
-      .from('wallets')
-      .update({
-        available_micros: micros.toString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id)
-
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
-    }
-
     return NextResponse.json({
       ok: true,
       usd: usdBalance,
       rate,
       vnd,
-      available_micros: micros.toString(),
+      available_micros: String(BigInt(vnd) * 1000n),
+      synced: false,
+      message: 'A6 balance fetched; wallet was not overwritten.',
     })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    console.error('A6 sync failed', err)
+    return NextResponse.json({ error: 'a6_sync_failed' }, { status: 500 })
   }
 }

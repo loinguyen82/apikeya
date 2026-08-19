@@ -1,6 +1,6 @@
 import type { ChatCompletionRequest } from '@aiapi/contracts'
-import type { RetailPrice } from './pricing'
-import { chargeForUsage } from './pricing'
+import type { RetailPrice } from './pricing.js'
+import { chargeForUsage } from './pricing.js'
 
 export interface ReservationPolicy {
   inputCharPerToken: number

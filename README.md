@@ -19,6 +19,8 @@ Mở SQL Editor trên Supabase Dashboard và chạy lần lượt:
 3. `supabase/migrations/003_rls.sql`
 4. `supabase/seed.sql`
 
+Nếu database đã chạy các migration trên, chạy thêm `supabase/migrations/004_topup_expiry.sql` để webhook không thể cộng tiền cho topup đã hết hạn.
+
 ### 2. Cấu hình Môi trường
 Sao chép `.env.example` thành `.env.local` trong `apps/web` và điền các thông tin:
 ```bash
@@ -35,6 +37,8 @@ npm run dev:gateway
 ```
 - Web App: `http://localhost:3000`
 - Gateway: `http://localhost:8787`
+
+Gateway local cần các biến trong `apps/gateway/.dev.vars`; bắt đầu từ `apps/gateway/.dev.vars.example` và chỉ dùng credential thật của môi trường được phép. Không commit `.dev.vars`.
 
 ## Tính năng Nổi bật V4
 - **Two-phase Billing:** Tạm giữ tiền trước (`reserve_api_request`) -> Dispatch -> Quyết toán thực tế (`settle_api_request`) -> Không bao giờ âm ví.

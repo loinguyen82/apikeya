@@ -26,6 +26,7 @@ yarn-error.log*
 .env.production.local
 .dev.vars
 *.vars
+*.tsbuildinfo
 
 
 # OS files

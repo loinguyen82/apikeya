@@ -1,13 +1,21 @@
 import { Hono } from 'hono'
 import type { ChatCompletionRequest } from '@aiapi/contracts'
-import type { Env } from '../env'
-import { executeChat } from '../application/execute-chat'
-import { validateChatRequest } from '../application/validate-chat'
+import type { Env } from '../env.js'
+import { executeChat } from '../application/execute-chat.js'
+import { validateChatRequest } from '../application/validate-chat.js'
 
 export const internalPlaygroundRoute = new Hono<{ Bindings: Env }>()
 
+function getExecutionCtx(c: { executionCtx: { waitUntil(promise: Promise<any>): void } }) {
+  try {
+    return c.executionCtx
+  } catch {
+    return undefined
+  }
+}
+
 internalPlaygroundRoute.post('/', async (c) => {
-  if (c.req.header('x-internal-token') !== c.env.INTERNAL_ADMIN_TOKEN) {
+  if (!c.env.INTERNAL_ADMIN_TOKEN || c.req.header('x-internal-token') !== c.env.INTERNAL_ADMIN_TOKEN) {
     return c.json({ error: { message: 'Unauthorized internal call' } }, 401)
   }
   const userId = c.req.header('x-user-id')
@@ -36,6 +44,6 @@ internalPlaygroundRoute.post('/', async (c) => {
     apiKeyId: null,
     channel: 'playground',
     idempotencyKey: c.req.header('idempotency-key') ?? undefined,
-    executionCtx: c.executionCtx,
+    executionCtx: getExecutionCtx(c),
   })
 })

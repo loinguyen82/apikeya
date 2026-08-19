@@ -1,0 +1,8 @@
+ENVIRONMENT=development
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+A6API_BASE_URL=https://api.a6api.com/v1
+A6API_KEY=your-a6api-key
+NECO_BASE_URL=https://api.neco.example/v1
+NECO_KEY=your-neco-key
+INTERNAL_ADMIN_TOKEN=your-internal-token

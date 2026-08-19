@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import type { Env } from './env'
-import { requireApiKey } from './middleware/api-key'
-import { chatRoute } from './routes/chat'
-import { modelsRoute } from './routes/models'
-import { internalPlaygroundRoute } from './routes/internal-playground'
+import type { Env } from './env.js'
+import { requireApiKey } from './middleware/api-key.js'
+import { chatRoute } from './routes/chat.js'
+import { modelsRoute } from './routes/models.js'
+import { internalPlaygroundRoute } from './routes/internal-playground.js'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -59,7 +59,7 @@ app.onError((err, c) => {
     {
       error: {
         code: 'INTERNAL_ERROR',
-        message: err.message || 'Lỗi hệ thống',
+        message: 'Lỗi hệ thống',
         type: 'server_error',
       },
     },

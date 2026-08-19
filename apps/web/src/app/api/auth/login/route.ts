@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { createAdminSupabase } from '@/lib/supabase/admin'
+import { ensureUserAccount } from '@/lib/bootstrap-user'
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +25,12 @@ export async function POST(req: NextRequest) {
         msg = 'Tài khoản chưa được kích hoạt qua email'
       }
       return NextResponse.json({ error: msg }, { status: 400 })
+    }
+
+    // Đảm bảo Profile và Wallet luôn luôn tồn tại trong DB
+    if (data?.user) {
+      const admin = createAdminSupabase()
+      await ensureUserAccount(admin, data.user, { seedBalance: false })
     }
 
     return NextResponse.json({ ok: true, user: data.user })

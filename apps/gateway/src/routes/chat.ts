@@ -1,12 +1,20 @@
 import { Hono } from 'hono'
 import type { ChatCompletionRequest } from '@aiapi/contracts'
-import type { Env } from '../env'
-import { executeChat } from '../application/execute-chat'
-import { validateChatRequest } from '../application/validate-chat'
+import type { Env } from '../env.js'
+import { executeChat } from '../application/execute-chat.js'
+import { validateChatRequest } from '../application/validate-chat.js'
 
 type Variables = { userId: string; apiKeyId: string }
 
 export const chatRoute = new Hono<{ Bindings: Env; Variables: Variables }>()
+
+function getExecutionCtx(c: { executionCtx: { waitUntil(promise: Promise<any>): void } }) {
+  try {
+    return c.executionCtx
+  } catch {
+    return undefined
+  }
+}
 
 chatRoute.post('/', async (c) => {
   let body: ChatCompletionRequest
@@ -32,6 +40,6 @@ chatRoute.post('/', async (c) => {
     apiKeyId: c.get('apiKeyId'),
     channel: 'api',
     idempotencyKey: c.req.header('idempotency-key') ?? undefined,
-    executionCtx: c.executionCtx,
+    executionCtx: getExecutionCtx(c),
   })
 })

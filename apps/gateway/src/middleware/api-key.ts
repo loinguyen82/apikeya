@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
-import { sha256Hex } from '../utils/crypto'
-import { adminDb } from '../repositories/supabase'
-import type { Env } from '../env'
+import { sha256Hex } from '../utils/crypto.js'
+import { adminDb } from '../repositories/supabase.js'
+import type { Env } from '../env.js'
 
 type Variables = {
   userId: string
@@ -36,8 +36,14 @@ export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variab
   c.set('apiKeyId', data.id)
   await next()
 
-  if (c.executionCtx?.waitUntil) {
-    c.executionCtx.waitUntil(
+  let executionCtx: { waitUntil(promise: Promise<any>): void } | undefined
+  try {
+    executionCtx = c.executionCtx
+  } catch {
+    executionCtx = undefined
+  }
+  if (executionCtx?.waitUntil) {
+    executionCtx.waitUntil(
       Promise.resolve(
         db.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
       ).then(() => undefined)

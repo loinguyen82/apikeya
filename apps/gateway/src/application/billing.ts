@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { rpcOrThrow } from '../repositories/supabase'
+import { rpcOrThrow } from '../repositories/supabase.js'
 
 export async function reserveRequest(
   db: SupabaseClient,
@@ -77,5 +77,6 @@ export async function markAmbiguous(db: SupabaseClient, requestId: string, error
     .from('api_requests')
     .update({ status: 'failed_ambiguous', error_code: errorCode })
     .eq('id', requestId)
+    .in('status', ['reserved', 'dispatching', 'streaming'])
   if (error) throw new Error(error.message)
 }
