@@ -6,13 +6,7 @@ import Link from 'next/link'
 type Model = { id: string; display_name: string }
 type Msg = { role: 'user' | 'assistant'; content: string }
 
-export function PlaygroundClient({
-  models,
-  initialModel,
-}: {
-  models: Model[]
-  initialModel: string
-}) {
+export function PlaygroundClient({ models, initialModel }: { models: Model[]; initialModel: string }) {
   const [model, setModel] = useState(initialModel)
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Msg[]>([])
@@ -34,144 +28,87 @@ export function PlaygroundClient({
       const res = await fetch('/api/playground', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages: next.map((m) => ({ role: m.role, content: m.content })),
-        }),
+        body: JSON.stringify({ model, messages: next.map((m) => ({ role: m.role, content: m.content })) }),
       })
-
       const data = await res.json()
       if (!res.ok) {
-        if (res.status === 402 || data?.error?.code === 'INSUFFICIENT_BALANCE') {
-          throw new Error('INSUFFICIENT_BALANCE')
-        }
+        if (res.status === 402 || data?.error?.code === 'INSUFFICIENT_BALANCE') throw new Error('INSUFFICIENT_BALANCE')
         throw new Error(data?.error?.message ?? 'Không nhận được phản hồi từ model')
       }
-
       const content = data?.choices?.[0]?.message?.content ?? '(Không có nội dung trả về)'
       setMessages([...next, { role: 'assistant', content }])
-
       if (data?.usage) {
         const totalTokens = (data.usage.prompt_tokens ?? 0) + (data.usage.completion_tokens ?? 0)
-        setLastReceipt(`✓ Hoàn thành lượt gọi: ${totalTokens.toLocaleString('vi-VN')} tokens`)
+        setLastReceipt(`Hoàn thành · ${totalTokens.toLocaleString('vi-VN')} tokens`)
       }
     } catch (e: any) {
-      if (e?.message === 'INSUFFICIENT_BALANCE') {
-        setError('Số dư dùng được của bạn chưa đủ để thực hiện lượt gọi này.')
-      } else {
-        setError(e instanceof Error ? e.message : 'Có lỗi xảy ra khi gọi AI')
-      }
+      setError(e?.message === 'INSUFFICIENT_BALANCE' ? 'Số dư dùng được chưa đủ cho lượt gọi này.' : e instanceof Error ? e.message : 'Có lỗi xảy ra khi gọi AI')
     } finally {
       setBusy(false)
     }
   }
 
+  function reset() {
+    setMessages([])
+    setError('')
+    setLastReceipt(null)
+  }
+
+  if (models.length === 0) {
+    return <section className="surface surface-pad"><div className="empty-card"><div className="empty-icon">P</div><strong>Chưa có model khả dụng</strong><p>Hệ thống chưa bật model nào cho Playground.</p><Link href="/docs" className="btn secondary">Mở tài liệu</Link></div></section>
+  }
+
   return (
-    <div className="card stack">
-      {models.length === 0 ? (
-        <div className="empty-state" role="status">
-          <strong>Chưa có model khả dụng</strong>
-          <p className="muted">Hệ thống chưa bật model nào cho playground. Vui lòng quay lại sau hoặc xem tài liệu tích hợp.</p>
-          <Link href="/docs" className="btn secondary">Mở tài liệu tích hợp →</Link>
-        </div>
-      ) : null}
-
-      <div className="row">
-        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '400px' }}>
-          <span style={{ fontWeight: 600, fontSize: '14px' }}>Mô hình:</span>
-          <select className="input" value={model} onChange={(e) => setModel(e.target.value)} disabled={busy || models.length === 0}>
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.display_name} ({m.id})
-              </option>
-            ))}
+    <section className="surface playground-shell">
+      <aside className="playground-side">
+        <div><div className="eyebrow">Session</div><h3 style={{ marginTop: 5 }}>Cấu hình thử nghiệm</h3></div>
+        <div className="field">
+          <label htmlFor="playground-model">Model</label>
+          <select id="playground-model" className="input" value={model} onChange={(e) => setModel(e.target.value)} disabled={busy}>
+            {models.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
           </select>
-        </label>
-        {messages.length > 0 && (
-          <button
-            className="btn secondary"
-            style={{ padding: '6px 12px', fontSize: '13px' }}
-            onClick={() => {
-              setMessages([])
-              setError('')
-              setLastReceipt(null)
-            }}
-          >
-            Làm mới hội thoại
-          </button>
-        )}
-      </div>
-
-      <div className="chat">
-        {messages.length === 0 && (
-          <div className="chat-bubble">
-            Xin chào! Hãy nhập câu hỏi bên dưới để thử nghiệm mô hình trực tiếp. Bạn không cần tạo API key để dùng thử.
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={`chat-bubble ${m.role === 'user' ? 'user' : ''}`}>
-            {m.content}
-          </div>
-        ))}
-        {busy && (
-          <div className="chat-bubble" style={{ color: 'var(--text-muted)' }}>
-            AI đang phản hồi...
-          </div>
-        )}
-      </div>
-
-      {lastReceipt && (
-        <div style={{ color: 'var(--success)', fontSize: '13px', fontWeight: 500 }}>
-          {lastReceipt}
+          <span className="field-hint"><code>{model}</code></span>
         </div>
-      )}
-
-      {error && (
-        <div
-          style={{
-            background: 'var(--danger-bg)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            color: 'var(--danger)',
-            padding: '12px 16px',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <span role="alert">{error}</span>
-          {error.includes('Số dư') && (
-            <Link href="/dashboard/billing" className="btn" style={{ padding: '6px 12px', fontSize: '13px' }}>
-              Nạp tiền ngay →
-            </Link>
-          )}
+        <div className="subtle-panel">
+          <strong style={{ fontSize: 13 }}>Tính phí theo usage</strong>
+          <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>Không cần API key cho Playground. Chi phí được ghi vào request logs của tài khoản.</p>
         </div>
-      )}
+        <div style={{ marginTop: 'auto', display: 'grid', gap: 8 }}>
+          <Link href="/dashboard/models" className="btn secondary">Xem model</Link>
+          {messages.length > 0 && <button type="button" className="btn secondary" onClick={reset}>Xóa hội thoại</button>}
+        </div>
+      </aside>
 
-      <div className="composer">
-        <textarea
-          className="input"
-          rows={3}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          placeholder="Nhập câu hỏi hoặc đoạn code... (Enter để gửi, Shift+Enter xuống dòng)"
-          disabled={busy || models.length === 0}
-        />
-        <button className="btn" onClick={send} disabled={busy || !input.trim() || !model || models.length === 0}>
-          {busy ? 'Đang gửi...' : 'Gửi'}
-        </button>
+      <div className="playground-main">
+        <div className="conversation" aria-live="polite">
+          {messages.length === 0 ? (
+            <div className="empty-card" style={{ margin: 'auto', width: 'min(100%, 520px)' }}>
+              <div className="empty-icon">→</div>
+              <strong>Gửi request đầu tiên</strong>
+              <p>Nhập prompt bên dưới để kiểm tra chất lượng model trước khi dùng trong ứng dụng.</p>
+            </div>
+          ) : messages.map((m, i) => <div key={i} className={`message ${m.role}`}>{m.content}</div>)}
+          {busy && <div className="message assistant">Đang nhận phản hồi…</div>}
+        </div>
+
+        <div className="composer-bar">
+          {lastReceipt && <div className="receipt">{lastReceipt}</div>}
+          {error && <div className="notice danger" role="alert" style={{ marginBottom: 10 }}>{error}{error.includes('Số dư') && <> · <Link href="/dashboard/billing"><strong>Nạp thêm</strong></Link></>}</div>}
+          <div className="composer-box">
+            <textarea
+              className="input"
+              rows={3}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+              placeholder="Nhập prompt… Enter để gửi, Shift+Enter để xuống dòng"
+              disabled={busy}
+              aria-label="Prompt"
+            />
+            <button className="btn" onClick={send} disabled={busy || !input.trim() || !model}>{busy ? 'Đang gửi' : 'Gửi'}</button>
+          </div>
+        </div>
       </div>
-
-      <small className="muted">
-        💡 Phiên dùng thử này sử dụng phiên đăng nhập web và trừ trực tiếp vào Số dư dịch vụ của bạn theo token thực tế.
-      </small>
-    </div>
+    </section>
   )
 }
