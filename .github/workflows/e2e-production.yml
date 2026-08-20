@@ -1,0 +1,36 @@
+name: Production E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save @playwright/test@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - name: Wait for production deployment
+        shell: bash
+        run: |
+          for i in {1..36}; do
+            if curl -fsSL https://apikeya.vercel.app | grep -q "Apikeya"; then
+              echo "Production is serving Apikeya"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production did not become ready"
+          exit 1
+      - name: Run E2E
+        env:
+          BASE_URL: https://apikeya.vercel.app
+        run: npx playwright test e2e/production.spec.js --reporter=line
