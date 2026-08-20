@@ -2,27 +2,18 @@ import Link from 'next/link'
 import { SignupForm } from '@/components/AuthForms'
 
 export default function SignupPage() {
-  return (
-    <main className="container" style={{ maxWidth: 440, paddingTop: 80, paddingBottom: 80 }}>
-      <div className="card stack">
-        <div className="stack" style={{ gap: '6px' }}>
-          <div className="brand" style={{ marginBottom: '8px' }}>
-            <span>⚡</span>
-            <span>AI API</span>
-          </div>
-          <h1>Tạo tài khoản</h1>
-          <p className="muted">Tạo tài khoản để trải nghiệm Playground và nạp VNĐ khi sẵn sàng.</p>
-        </div>
-
-        <SignupForm />
-
-        <div className="row" style={{ justifyContent: 'center', fontSize: '14px', marginTop: '8px' }}>
-          <span className="muted">Đã có tài khoản?</span>
-          <Link href="/login" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-            Đăng nhập ngay
-          </Link>
-        </div>
-      </div>
-    </main>
-  )
+  return <main className="auth-page">
+    <section className="auth-aside">
+      <Link href="/" className="landing-brand"><span className="brand-mark">A</span><span>Apikeya</span></Link>
+      <h1>Bắt đầu với API gateway trong vài phút.</h1>
+      <p>Tạo tài khoản, thử model trong Playground rồi sinh API key khi bạn sẵn sàng tích hợp.</p>
+      <div className="auth-benefits"><div className="auth-benefit">Không cần cấu hình phức tạp để dùng thử</div><div className="auth-benefit">Một Base URL cho nhiều model</div><div className="auth-benefit">Nạp và theo dõi chi phí bằng VNĐ</div></div>
+    </section>
+    <section className="auth-panel"><div className="auth-card">
+      <Link href="/" className="auth-brand"><span className="brand-mark">A</span>Apikeya</Link>
+      <h2 className="auth-title">Tạo tài khoản</h2><p className="auth-subtitle">Thiết lập tài khoản developer của bạn.</p>
+      <SignupForm />
+      <div className="auth-foot">Đã có tài khoản? <Link href="/login">Đăng nhập</Link></div>
+    </div></section>
+  </main>
 }
