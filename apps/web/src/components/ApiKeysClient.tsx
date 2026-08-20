@@ -3,14 +3,7 @@
 import React, { useState } from 'react'
 import { formatVietnamDate, formatVietnamDateTime } from '@/lib/date'
 
-interface KeyItem {
-  id: string
-  name: string
-  prefix: string
-  status: string
-  last_used_at: string | null
-  created_at: string
-}
+interface KeyItem { id: string; name: string; prefix: string; status: string; last_used_at: string | null; created_at: string }
 
 export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys)
@@ -21,277 +14,70 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
   const [copyError, setCopyError] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
   const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://ai-api-gateway.loi822004.workers.dev'
 
   async function handleCreateKey(e: React.FormEvent) {
-    e.preventDefault()
-    setCreating(true)
-    setErrorMsg(null)
-
+    e.preventDefault(); setCreating(true); setErrorMsg(null)
     try {
-      const res = await fetch('/api/keys', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: keyName.trim() || 'API Key' }),
-      })
-
+      const res = await fetch('/api/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: keyName.trim() || 'API Key' }) })
       const json = await res.json()
-      if (!res.ok || json.error) {
-        setErrorMsg(json.error || 'Không thể tạo API key')
-      } else {
+      if (!res.ok || json.error) setErrorMsg(json.error || 'Không thể tạo API key')
+      else {
         setNewKeyPlaintext(json.plaintext)
-        setKeys([
-          {
-            id: json.key.id,
-            name: json.key.name,
-            prefix: json.key.prefix,
-            status: 'active',
-            last_used_at: null,
-            created_at: json.key.created_at || new Date().toISOString(),
-          },
-          ...keys,
-        ])
+        setKeys([{ id: json.key.id, name: json.key.name, prefix: json.key.prefix, status: 'active', last_used_at: null, created_at: json.key.created_at || new Date().toISOString() }, ...keys])
         setKeyName('')
       }
-    } catch {
-      setErrorMsg('Lỗi kết nối máy chủ')
-    } finally {
-      setCreating(false)
-    }
+    } catch { setErrorMsg('Lỗi kết nối máy chủ') } finally { setCreating(false) }
   }
 
   async function handleRevoke(keyId: string) {
-    if (!confirm('Bạn có chắc chắn muốn thu hồi khóa API này? Ứng dụng đang dùng khóa này sẽ bị từ chối truy cập.')) {
-      return
-    }
-
+    if (!confirm('Thu hồi API key này? Ứng dụng đang dùng key sẽ ngừng truy cập.')) return
     setRevokingId(keyId)
     try {
-      const res = await fetch('/api/keys', {
-        method: 'DELETE',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: keyId }),
-      })
-
-      if (res.ok) {
-        setKeys(keys.map((k) => (k.id === keyId ? { ...k, status: 'revoked' } : k)))
-      }
-    } catch {
-      alert('Không thể thu hồi khóa')
-    } finally {
-      setRevokingId(null)
-    }
+      const res = await fetch('/api/keys', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: keyId }) })
+      if (res.ok) setKeys(keys.map((k) => k.id === keyId ? { ...k, status: 'revoked' } : k))
+      else setErrorMsg('Không thể thu hồi API key')
+    } catch { setErrorMsg('Không thể thu hồi API key') } finally { setRevokingId(null) }
   }
 
   async function copyKey(text: string) {
     setCopyError(false)
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    } catch {
-      setCopyError(true)
-    }
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2200) } catch { setCopyError(true) }
   }
 
   return (
-    <div className="stack" style={{ gap: '28px' }}>
-      <div className="row">
-        <div>
-          <h1>Quản Lý Khóa API (API Keys) 🔑</h1>
-          <p className="muted">
-            Tạo và quản lý các khóa bí mật để kết nối ứng dụng của bạn (Cursor, VS Code, Python SDK, Web App) với AI Gateway.
-          </p>
-        </div>
-      </div>
+    <div className="page-stack">
+      <header className="page-head">
+        <div className="page-head-copy"><div className="eyebrow">API keys</div><h1>Khóa truy cập của bạn</h1><p>Tạo key riêng cho từng ứng dụng. Secret chỉ hiển thị một lần khi tạo và có thể thu hồi bất cứ lúc nào.</p></div>
+      </header>
 
-      {errorMsg && (
-        <div
-          style={{
-            padding: '10px 14px',
-            background: 'var(--danger-bg)',
-            color: 'var(--danger)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: '14px',
-          }}
-        >
-          {errorMsg}
-        </div>
-      )}
-
-      {/* KHUNG HIỂN THỊ KEY VỪA TẠO */}
+      {errorMsg && <div className="notice danger" role="alert">{errorMsg}</div>}
       {newKeyPlaintext && (
-        <div
-          style={{
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)',
-            border: '2px solid var(--success)',
-            borderRadius: 'var(--radius-md)',
-            padding: '20px 24px',
-          }}
-          className="stack"
-        >
-          <div className="row">
-            <div>
-              <h3 style={{ color: 'var(--success)', fontSize: '18px' }}>🎉 Tạo Khóa API Mới Thành Công!</h3>
-              <p style={{ fontSize: '13px', marginTop: '4px' }}>
-                Vui lòng <strong>sao chép và lưu trữ ngay</strong>. Khóa bí mật này sẽ <strong>không bao giờ hiển thị lại</strong> sau khi bạn đóng thông báo này.
-              </p>
-            </div>
-            <button
-              className="btn secondary"
-              style={{ padding: '6px 12px', fontSize: '13px' }}
-              onClick={() => setNewKeyPlaintext(null)}
-            >
-              ✓ Đã lưu, đóng lại
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              background: 'var(--bg)',
-              padding: '12px 16px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--line)',
-            }}
-          >
-            <code
-              style={{
-                fontSize: '15px',
-                fontWeight: 700,
-                color: 'var(--primary-hover)',
-                fontFamily: 'var(--font-mono)',
-                wordBreak: 'break-all',
-                flex: 1,
-              }}
-            >
-              {newKeyPlaintext}
-            </code>
-            <button
-              className="btn"
-              type="button"
-              style={{ padding: '8px 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
-              onClick={() => copyKey(newKeyPlaintext)}
-            >
-              {copied ? '✓ Đã sao chép!' : '📋 Sao chép Key'}
-            </button>
-          </div>
-          {copyError && <p className="muted" role="alert">Không thể tự động sao chép. Hãy bôi đen key và sao chép thủ công.</p>}
-        </div>
+        <section className="surface surface-pad">
+          <div className="page-head" style={{ marginBottom: 14 }}><div><span className="status-chip success">Key vừa tạo</span><h3 style={{ marginTop: 8 }}>Lưu secret trước khi đóng</h3><p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Secret này sẽ không hiển thị lại.</p></div><button className="btn secondary" type="button" onClick={() => setNewKeyPlaintext(null)}>Đã lưu</button></div>
+          <div className="secret-box"><code>{newKeyPlaintext}</code><button className="btn" type="button" onClick={() => copyKey(newKeyPlaintext)}>{copied ? 'Đã sao chép' : 'Sao chép'}</button></div>
+          {copyError && <div className="notice warning" style={{ marginTop: 10 }}>Trình duyệt chặn clipboard. Hãy sao chép secret thủ công.</div>}
+        </section>
       )}
 
-      {/* FORM TẠO KEY MỚI */}
-      <div className="card stack" style={{ gap: '14px' }}>
-        <h3>Tạo API Key mới</h3>
-        <form onSubmit={handleCreateKey} className="row" style={{ gap: '12px', flexWrap: 'wrap' }}>
-          <input
-            className="input"
-            type="text"
-            placeholder="Đặt tên khóa (ví dụ: Cursor IDE / Production App / Python Bot)"
-            value={keyName}
-            onChange={(e) => setKeyName(e.target.value)}
-            style={{ flex: 1, minWidth: '260px' }}
-          />
-          <button className="btn" type="submit" disabled={creating} style={{ whiteSpace: 'nowrap' }}>
-            {creating ? 'Đang tạo key...' : '+ Tạo API Key Mới'}
-          </button>
-        </form>
-      </div>
+      <div className="key-grid">
+        <section className="surface surface-pad">
+          <div className="eyebrow">New key</div><h3 style={{ margin: '6px 0 14px' }}>Tạo API key</h3>
+          <form onSubmit={handleCreateKey} className="page-stack" style={{ gap: 14 }}>
+            <div className="field"><label htmlFor="key-name">Tên key</label><input id="key-name" className="input" type="text" placeholder="Production app" value={keyName} onChange={(e) => setKeyName(e.target.value)} /><span className="field-hint">Dùng tên dễ nhận biết theo app hoặc môi trường.</span></div>
+            <button className="btn" type="submit" disabled={creating}>{creating ? 'Đang tạo…' : 'Tạo API key'}</button>
+          </form>
+          <div className="quick-config" style={{ marginTop: 20 }}><div className="config-item"><small>Base URL</small><code>{gatewayUrl}/v1</code></div><div className="config-item"><small>Auth header</small><code>Bearer sk-...</code></div></div>
+        </section>
 
-      {/* BẢNG DANH SÁCH KEY */}
-      <div className="card stack">
-        <h3>Danh sách API Key ({keys.length})</h3>
-        {keys.length > 0 ? (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Tên định danh</th>
-                  <th>Mã định danh (Prefix)</th>
-                  <th>Trạng thái</th>
-                  <th>Sử dụng gần nhất</th>
-                  <th>Ngày tạo</th>
-                  <th>Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {keys.map((k) => (
-                  <tr key={k.id}>
-                    <td>
-                      <strong>{k.name}</strong>
-                    </td>
-                    <td>
-                      <code style={{ fontSize: '13px' }}>{k.prefix}••••••••••••</code>
-                    </td>
-                    <td>
-                      <span
-                        className="badge"
-                        style={{
-                          background: k.status === 'active' ? 'var(--success-bg)' : 'var(--danger-bg)',
-                          color: k.status === 'active' ? 'var(--success)' : 'var(--danger)',
-                          borderColor: k.status === 'active' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {k.status === 'active' ? '✓ Đang hoạt động' : 'Đã thu hồi'}
-                      </span>
-                    </td>
-                    <td className="muted">
-                      {k.last_used_at ? formatVietnamDateTime(k.last_used_at) : 'Chưa sử dụng'}
-                    </td>
-                    <td className="muted">{formatVietnamDate(k.created_at)}</td>
-                    <td>
-                      {k.status === 'active' && (
-                        <button
-                          type="button"
-                          className="btn secondary"
-                          style={{ padding: '4px 10px', fontSize: '12px', color: 'var(--danger)' }}
-                          disabled={revokingId === k.id}
-                          onClick={() => handleRevoke(k.id)}
-                        >
-                          {revokingId === k.id ? 'Đang xử lý...' : 'Thu hồi'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>
-            Bạn chưa tạo API key nào. Nhập tên và bấm <strong>"+ Tạo API Key Mới"</strong> ở trên để bắt đầu!
-          </div>
-        )}
-      </div>
-
-      {/* HƯỚNG DẪN TÍCH HỢP NHANH */}
-      <div
-        className="card stack"
-        style={{
-          background: 'var(--bg-subtle)',
-          gap: '10px',
-          border: '1px solid var(--line)',
-        }}
-      >
-        <h4>🚀 Cách cấu hình nhanh vào các ứng dụng:</h4>
-        <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
-          <div>
-            • <strong>Base URL (OpenAI Compatible):</strong>{' '}
-            <code style={{ color: 'var(--primary-hover)', fontWeight: 600 }}>{gatewayUrl}/v1</code>
-          </div>
-          <div>
-            • <strong>API Key:</strong> Dán mã khóa dạng{' '}
-            <code>sk-...</code> bạn vừa tạo ở trên.
-          </div>
-          <div>
-            • Hỗ trợ mọi thư viện OpenAI SDK, LangChain, LlamaIndex, Cursor IDE, VS Code Continue, NextChat,...
-          </div>
-        </div>
+        <section className="surface model-table-shell">
+          <div className="surface-head"><h3>Danh sách key</h3><span className="status-chip">{keys.length} key</span></div>
+          {keys.length > 0 ? (
+            <div className="table-scroll"><table className="data-table"><thead><tr><th>Tên</th><th>Prefix</th><th>Trạng thái</th><th>Dùng gần nhất</th><th>Ngày tạo</th><th></th></tr></thead><tbody>
+              {keys.map((k) => <tr key={k.id}><td><strong>{k.name}</strong></td><td><code>{k.prefix}••••••</code></td><td><span className={`status-chip ${k.status === 'active' ? 'success' : ''}`}>{k.status === 'active' ? 'Active' : 'Revoked'}</span></td><td>{k.last_used_at ? formatVietnamDateTime(k.last_used_at) : 'Chưa dùng'}</td><td>{formatVietnamDate(k.created_at)}</td><td>{k.status === 'active' && <button type="button" className="btn secondary" disabled={revokingId === k.id} onClick={() => handleRevoke(k.id)}>{revokingId === k.id ? 'Đang xử lý' : 'Thu hồi'}</button>}</td></tr>)}
+            </tbody></table></div>
+          ) : <div className="surface-body"><div className="empty-card"><div className="empty-icon">K</div><strong>Chưa có API key</strong><p>Tạo key đầu tiên ở cột bên trái để kết nối SDK hoặc ứng dụng.</p></div></div>}
+        </section>
       </div>
     </div>
   )
