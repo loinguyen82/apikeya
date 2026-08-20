@@ -22,7 +22,7 @@ export function PlaygroundClient({
 
   async function send() {
     const text = input.trim()
-    if (!text || busy) return
+    if (!text || busy || !model) return
     setBusy(true)
     setError('')
     setInput('')
@@ -68,10 +68,18 @@ export function PlaygroundClient({
 
   return (
     <div className="card stack">
+      {models.length === 0 ? (
+        <div className="empty-state" role="status">
+          <strong>Chưa có model khả dụng</strong>
+          <p className="muted">Hệ thống chưa bật model nào cho playground. Vui lòng quay lại sau hoặc xem tài liệu tích hợp.</p>
+          <Link href="/docs" className="btn secondary">Mở tài liệu tích hợp →</Link>
+        </div>
+      ) : null}
+
       <div className="row">
         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '400px' }}>
           <span style={{ fontWeight: 600, fontSize: '14px' }}>Mô hình:</span>
-          <select className="input" value={model} onChange={(e) => setModel(e.target.value)}>
+          <select className="input" value={model} onChange={(e) => setModel(e.target.value)} disabled={busy || models.length === 0}>
             {models.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.display_name} ({m.id})
@@ -132,7 +140,7 @@ export function PlaygroundClient({
             justifyContent: 'space-between',
           }}
         >
-          <span>{error}</span>
+          <span role="alert">{error}</span>
           {error.includes('Số dư') && (
             <Link href="/dashboard/billing" className="btn" style={{ padding: '6px 12px', fontSize: '13px' }}>
               Nạp tiền ngay →
@@ -141,9 +149,10 @@ export function PlaygroundClient({
         </div>
       )}
 
-      <div className="row">
-        <input
+      <div className="composer">
+        <textarea
           className="input"
+          rows={3}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -152,10 +161,10 @@ export function PlaygroundClient({
               send()
             }
           }}
-          placeholder="Nhập câu hỏi và nhấn Enter..."
-          disabled={busy}
+          placeholder="Nhập câu hỏi hoặc đoạn code... (Enter để gửi, Shift+Enter xuống dòng)"
+          disabled={busy || models.length === 0}
         />
-        <button className="btn" onClick={send} disabled={busy || !input.trim()}>
+        <button className="btn" onClick={send} disabled={busy || !input.trim() || !model || models.length === 0}>
           {busy ? 'Đang gửi...' : 'Gửi'}
         </button>
       </div>

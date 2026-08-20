@@ -3,6 +3,7 @@ import type { ChatCompletionRequest } from '@aiapi/contracts'
 import type { Env } from '../env.js'
 import { executeChat } from '../application/execute-chat.js'
 import { validateChatRequest } from '../application/validate-chat.js'
+import { hmacSha256Hex } from '../utils/crypto.js'
 
 export const internalPlaygroundRoute = new Hono<{ Bindings: Env }>()
 
@@ -20,6 +21,14 @@ internalPlaygroundRoute.post('/', async (c) => {
   }
   const userId = c.req.header('x-user-id')
   if (!userId) return c.json({ error: { message: 'Missing user context' } }, 400)
+  if (!c.env.GATEWAY_USER_ASSERTION_SECRET) {
+    return c.json({ error: { message: 'Playground user assertion is not configured' } }, 503)
+  }
+  const assertion = c.req.header('x-user-assertion')
+  const expectedAssertion = `sha256=${await hmacSha256Hex(c.env.GATEWAY_USER_ASSERTION_SECRET, userId)}`
+  if (!assertion || assertion !== expectedAssertion) {
+    return c.json({ error: { message: 'Invalid user context' } }, 401)
+  }
 
   let body: ChatCompletionRequest
   try {

@@ -26,6 +26,7 @@ export default async function AdminModelsPage() {
 
       <div className="card stack">
         <h3>1. Danh Mục Mô Hình Bán Lẻ (Models)</h3>
+        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -60,10 +61,12 @@ export default async function AdminModelsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="card stack">
         <h3>2. Cấu Hình Tuyến Upstream (Provider Routes)</h3>
+        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -90,6 +93,7 @@ export default async function AdminModelsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/auth'
-import { formatVndFromMicros, formatNumber } from '@/lib/money'
+import { formatCarrotFromMicros, formatNumber } from '@/lib/money'
 
 export default async function UsagePage() {
   const { supabase, user } = await requireUser()
@@ -16,7 +16,7 @@ export default async function UsagePage() {
       <div>
         <h1>Báo Cáo Chi Tiêu & Lịch Sử Sử Dụng 📊</h1>
         <p className="muted">
-          Kiểm toán minh bạch từng lượt gọi API: số token đầu vào (prompt), số token đầu ra (completion) và số tiền VNĐ bị trừ.
+          Kiểm toán minh bạch từng lượt gọi API: số token đầu vào, số token đầu ra và số carrot bị trừ.
         </p>
       </div>
 
@@ -33,7 +33,7 @@ export default async function UsagePage() {
                   <th>Mô hình</th>
                   <th>Input Tokens</th>
                   <th>Output Tokens</th>
-                  <th>Chi phí (VNĐ)</th>
+                  <th>Credit 🥕</th>
                   <th>Trạng thái</th>
                 </tr>
               </thead>
@@ -50,7 +50,7 @@ export default async function UsagePage() {
                     <td><code>{r.model_id}</code></td>
                     <td>{formatNumber(r.input_tokens ?? 0)}</td>
                     <td>{formatNumber(r.output_tokens ?? 0)}</td>
-                    <td style={{ fontWeight: 600 }}>{formatVndFromMicros(r.retail_cost_micros ?? '0')}</td>
+                    <td style={{ fontWeight: 600 }}>{formatCarrotFromMicros(r.retail_cost_micros ?? '0')}</td>
                     <td>
                       <span
                         className="badge"

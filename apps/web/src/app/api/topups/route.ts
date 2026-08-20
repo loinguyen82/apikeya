@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { rejectCrossSiteMutation } from '@/lib/security'
 
-const allowedAmounts = new Set([50000, 100000, 200000, 500000, 1000000])
+const allowedAmounts = new Set([50000, 100000, 200000, 500000, 1000000, 2000000])
 
 export async function POST(req: NextRequest) {
+  const originError = rejectCrossSiteMutation(req)
+  if (originError) return originError
+
   const client = await createServerSupabase()
   const {
     data: { user },
@@ -21,14 +25,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_amount' }, { status: 400 })
   }
 
+  const { count: activePendingCount, error: pendingLookupError } = await client
+    .from('topups')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString())
+
+  if (pendingLookupError) {
+    return NextResponse.json({ error: 'Không thể kiểm tra đơn nạp đang mở' }, { status: 503 })
+  }
+  if ((activePendingCount ?? 0) > 0) {
+    return NextResponse.json({ error: 'Bạn đang có một đơn nạp chưa hết hạn' }, { status: 409 })
+  }
+
   const bonus =
-    amount >= 1000000
+    amount >= 2000000
+      ? Math.floor(amount * 0.15)
+      : amount >= 1000000
       ? Math.floor(amount * 0.1)
       : amount >= 500000
       ? Math.floor(amount * 0.05)
       : 0
 
   const admin = createAdminSupabase()
+  await admin
+    .from('topups')
+    .update({ status: 'expired' })
+    .eq('user_id', user.id)
+    .eq('status', 'pending')
+    .lte('expires_at', new Date().toISOString())
+
   const { data, error } = await admin
     .from('topups')
     .insert({
@@ -44,6 +71,9 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) {
+    if (error.code === '23505') {
+      return NextResponse.json({ error: 'Bạn đang có một đơn nạp chưa hết hạn' }, { status: 409 })
+    }
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 

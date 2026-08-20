@@ -30,14 +30,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Đơn này đã được duyệt trước đó' }, { status: 400 })
       }
 
-      // Gia hạn hạn đơn để không bị chặn bởi điều kiện expires_at
-      await admin
-        .from('topups')
-        .update({
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'pending',
-        })
-        .eq('id', topup.id)
+      if (topup.status !== 'pending') {
+        return NextResponse.json({ error: 'Đơn này không còn ở trạng thái chờ duyệt' }, { status: 409 })
+      }
+
+      if (new Date(topup.expires_at).getTime() <= Date.now()) {
+        return NextResponse.json({ error: 'Đơn nạp đã hết hạn' }, { status: 409 })
+      }
 
       // Gọi RPC apply_paid_topup chuẩn với đúng 2 tham số: p_topup_id và p_external_id
       const { data, error: rpcErr } = await admin.rpc('apply_paid_topup', {
@@ -61,13 +60,23 @@ export async function POST(req: NextRequest) {
       const { error: updateErr } = await admin
         .from('topups')
         .update({
-          status: 'failed',
-          updated_at: new Date().toISOString(),
+          status: 'cancelled',
         })
         .eq('id', topupId)
+        .eq('status', 'pending')
 
       if (updateErr) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      }
+
+      const { data: cancelledTopup } = await admin
+        .from('topups')
+        .select('id')
+        .eq('id', topupId)
+        .eq('status', 'cancelled')
+        .maybeSingle()
+      if (!cancelledTopup) {
+        return NextResponse.json({ error: 'Đơn này không còn ở trạng thái chờ huỷ' }, { status: 409 })
       }
 
       return NextResponse.json({ ok: true })
@@ -133,6 +142,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (err: any) {
+    if (err?.digest?.startsWith?.('NEXT_REDIRECT')) throw err
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 })
   }
 }

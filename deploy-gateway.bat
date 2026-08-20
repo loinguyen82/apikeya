@@ -25,6 +25,8 @@ echo --- NECO_KEY ---
 npx wrangler secret put NECO_KEY
 echo --- INTERNAL_ADMIN_TOKEN ---
 npx wrangler secret put INTERNAL_ADMIN_TOKEN
+echo --- GATEWAY_USER_ASSERTION_SECRET ---
+npx wrangler secret put GATEWAY_USER_ASSERTION_SECRET
 
 echo.
 echo [3/3] Dang deploy Gateway...

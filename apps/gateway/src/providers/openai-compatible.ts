@@ -1,6 +1,8 @@
 import type { ChatCompletionRequest, ProviderFailure, TokenUsage } from '@aiapi/contracts'
 import type { ProviderAdapter, ProviderSuccess } from './types.js'
-import { classifyRetry } from '@aiapi/core'
+import { classifyRetry, requestedOutputCap } from '@aiapi/core'
+
+const HARD_OUTPUT_CAP = 8192
 
 function readUsage(payload: any): TokenUsage {
   const usage = payload?.usage
@@ -25,6 +27,12 @@ function readUsage(payload: any): TokenUsage {
     throw new Error('Upstream thiếu usage hợp lệ')
   }
   return { inputTokens, outputTokens }
+}
+
+function validateCompletionPayload(payload: any): void {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.choices)) {
+    throw new Error('Upstream response thiếu choices hợp lệ')
+  }
 }
 
 function trackStream(
@@ -82,6 +90,11 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       const body = {
         ...args.body,
         model: args.upstreamModel,
+        ...(args.body.max_completion_tokens != null
+          ? { max_completion_tokens: requestedOutputCap(args.body, HARD_OUTPUT_CAP) }
+          : args.body.max_tokens != null
+          ? { max_tokens: requestedOutputCap(args.body, HARD_OUTPUT_CAP) }
+          : {}),
         ...(args.body.stream ? { stream_options: { include_usage: true } } : {}),
       }
       const response = await fetch(`${args.baseUrl.replace(/\/$/, '')}/chat/completions`, {
@@ -116,7 +129,14 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       }
       const providerRequestId = response.headers.get('x-request-id') ?? undefined
       if (args.body.stream) {
-        if (!response.body) throw new Error('Upstream stream body missing')
+        if (!response.body) {
+          return {
+            providerId: this.id,
+            code: 'UPSTREAM_STREAM_BODY_MISSING',
+            message: 'Upstream returned an empty stream body after accepting the request',
+            retryClass: classifyRetry({ responseStarted: true, streamStarted: false, kind: 'network' }),
+          }
+        }
         const [clientStream, meterStream] = response.body.tee()
         let openStreams = 2
         const onComplete = () => {
@@ -133,6 +153,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       }
       try {
         const payload = (await response.json()) as Record<string, unknown>
+        validateCompletionPayload(payload)
         return { kind: 'json', response, payload, usage: readUsage(payload), providerRequestId }
       } catch (error) {
         return {

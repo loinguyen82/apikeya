@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
-import { formatVndFromMicros } from '@/lib/money'
+import { formatCarrotFromMicros } from '@/lib/money'
 
 export default async function ModelsPage() {
   const { supabase } = await requireUser()
@@ -16,7 +16,7 @@ export default async function ModelsPage() {
       <div>
         <h1>Danh mục Mô hình AI 🤖</h1>
         <p className="muted">
-          Giá được niêm yết theo VNĐ trên mỗi 1 triệu token. Token là đơn vị đo lường độ dài văn bản của AI.
+          Giá được niêm yết theo carrot trên mỗi 1 triệu token. Token là đơn vị đo lường độ dài văn bản của AI.
         </p>
       </div>
 
@@ -32,8 +32,8 @@ export default async function ModelsPage() {
               <p className="muted" style={{ fontSize: '14px' }}>{m.description}</p>
               <div className="price">
                 {m.pricing_mode === 'flat_total'
-                  ? formatVndFromMicros(m.retail_flat_micros_per_mtoken)
-                  : `${formatVndFromMicros(m.retail_input_micros_per_mtoken)} (in) / ${formatVndFromMicros(m.retail_output_micros_per_mtoken)} (out)`}
+                  ? formatCarrotFromMicros(m.retail_flat_micros_per_mtoken)
+                  : `${formatCarrotFromMicros(m.retail_input_micros_per_mtoken)} (in) / ${formatCarrotFromMicros(m.retail_output_micros_per_mtoken)} (out)`}
                 <span className="muted" style={{ fontSize: '13px', fontWeight: 400 }}> / 1M token</span>
               </div>
             </div>

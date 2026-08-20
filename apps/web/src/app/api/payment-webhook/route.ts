@@ -1,18 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 
+async function hmacSha256Hex(secret: string, value: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 export async function POST(req: NextRequest) {
   const signature = req.headers.get('x-webhook-signature')
   const secret = process.env.PAYMENT_WEBHOOK_SECRET
+  const body = await req.text()
+  const expected = secret ? `sha256=${await hmacSha256Hex(secret, body)}` : ''
 
-  if (!secret || !signature || signature !== secret) {
+  if (!secret || !signature || signature !== expected) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const payload = (await req.json()) as {
+  let payload: {
     topup_id?: string
     external_id?: string
     paid?: boolean
+  }
+  try {
+    payload = JSON.parse(body)
+  } catch {
+    return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
   }
 
   if (!payload.paid || !payload.topup_id || !payload.external_id) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { rejectCrossSiteMutation } from '@/lib/security'
 
 async function sha256Hex(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value)
@@ -14,11 +15,14 @@ function generateKey(): { plaintext: string; prefix: string } {
     .replaceAll('+', '-')
     .replaceAll('/', '_')
     .replaceAll('=', '')
-  const plaintext = `ak_live_${token}`
-  return { plaintext, prefix: plaintext.slice(0, 14) }
+  const plaintext = `sk-${token}`
+  return { plaintext, prefix: plaintext.slice(0, 10) }
 }
 
 export async function POST(req: NextRequest) {
+  const originError = rejectCrossSiteMutation(req)
+  if (originError) return originError
+
   const userClient = await createServerSupabase()
   const {
     data: { user },
@@ -71,6 +75,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const originError = rejectCrossSiteMutation(req)
+  if (originError) return originError
+
   const userClient = await createServerSupabase()
   const {
     data: { user },

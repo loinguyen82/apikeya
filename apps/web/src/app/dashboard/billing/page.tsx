@@ -20,7 +20,12 @@ export default async function BillingPage({
   return (
     <BillingClient
       wallet={wallet}
-      currentTopup={currentTopup?.data || (topups && topups.length > 0 && topups[0].status === 'pending' ? topups[0] : null)}
+      currentTopup={
+        currentTopup?.data ||
+        (topups && topups.length > 0 && topups[0].status === 'pending' && new Date(topups[0].expires_at) > new Date()
+          ? topups[0]
+          : null)
+      }
       recentTopups={topups || []}
     />
   )

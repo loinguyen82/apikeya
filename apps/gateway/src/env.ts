@@ -7,4 +7,5 @@ export interface Env {
   NECO_BASE_URL: string
   NECO_KEY: string
   INTERNAL_ADMIN_TOKEN: string
+  GATEWAY_USER_ASSERTION_SECRET: string
 }

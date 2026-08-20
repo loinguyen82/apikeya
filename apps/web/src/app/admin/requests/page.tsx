@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/admin'
 import { formatVndFromMicros, formatNumber } from '@/lib/money'
+import { formatVietnamDateTime } from '@/lib/date'
 
 export default async function AdminRequestsPage() {
   const { admin } = await requireAdmin()
@@ -76,7 +77,7 @@ export default async function AdminRequestsPage() {
                     </td>
                     <td className="muted" style={{ fontSize: '12px' }}>{r.error_code ?? '-'}</td>
                     <td className="muted" style={{ fontSize: '13px' }}>
-                      {new Date(r.created_at).toLocaleString('vi-VN')}
+                      {formatVietnamDateTime(r.created_at)}
                     </td>
                   </tr>
                 )

@@ -8,13 +8,22 @@ type Variables = {
   apiKeyId: string
 }
 
+export function isSupportedApiKey(value: string): boolean {
+  return value.startsWith('sk-') || value.startsWith('ak_live_')
+}
+
 export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
   const auth = c.req.header('authorization')
-  if (!auth?.startsWith('Bearer ')) {
+  const headerKey = c.req.header('x-api-key')
+  const bearerKey = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length).trim() : null
+  if (headerKey && bearerKey && headerKey !== bearerKey) {
+    return c.json({ error: { message: 'API key không nhất quán', type: 'authentication_error' } }, 401)
+  }
+  const plaintext = headerKey || bearerKey
+  if (!plaintext) {
     return c.json({ error: { message: 'Thiếu API key', type: 'authentication_error' } }, 401)
   }
-  const plaintext = auth.slice('Bearer '.length).trim()
-  if (!plaintext.startsWith('ak_live_')) {
+  if (!isSupportedApiKey(plaintext)) {
     return c.json({ error: { message: 'API key không hợp lệ', type: 'authentication_error' } }, 401)
   }
   const secretHash = await sha256Hex(plaintext)

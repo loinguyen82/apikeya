@@ -64,6 +64,9 @@ npx wrangler secret put NECO_KEY
 
 npx wrangler secret put INTERNAL_ADMIN_TOKEN
 # Nhập mã token nội bộ giữa Gateway và Web
+
+npx wrangler secret put GATEWAY_USER_ASSERTION_SECRET
+# Secret riêng để Gateway xác thực user do Web chuyển tiếp cho playground
 ```
 
 Deploy:
@@ -95,7 +98,7 @@ git push -u origin main
 
 ### 2.2. Import vào Vercel
 1. Vào [vercel.com/new](https://vercel.com/new) → Import Git Repository → Chọn repo `apikeya`.
-2. Vercel tự detect `vercel.json` → Root Directory = `apps/web`.
+2. Giữ **Root Directory** ở thư mục gốc repository. `vercel.json` đã chỉ định build workspace `@aiapi/web` và output `apps/web/.next`.
 3. Tại mục **Environment Variables**, thêm các biến sau:
 
 | Key | Value (Lấy từ file config riêng của bạn) |
@@ -106,9 +109,12 @@ git push -u origin main
 | `NEXT_PUBLIC_GATEWAY_BASE_URL` | `https://ai-api-gateway.YOUR_SUBDOMAIN.workers.dev` ← URL từ Bước 1 |
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR_PROJECT.vercel.app` ← Vercel sẽ cho URL sau khi deploy |
 | `GATEWAY_INTERNAL_TOKEN` | Token nội bộ bí mật |
+| `GATEWAY_USER_ASSERTION_SECRET` | Phải giống secret `GATEWAY_USER_ASSERTION_SECRET` trên Gateway |
 | `ADMIN_EMAILS` | Email admin của bạn (vd: loi822004@gmail.com) |
 | `A6API_KEY` | API key A6API dùng cho admin live balance/sync |
-| `PAYMENT_WEBHOOK_SECRET` | Secret webhook nạp tiền |
+| `PAYMENT_WEBHOOK_SECRET` | Secret dùng để tạo HMAC `sha256=<hex(raw body)>` cho webhook |
+| `ENABLE_SIGNUP_TRIAL_CREDIT` | Để `false` hoặc bỏ trống trong production. Chỉ bật `true` khi đã có chống abuse và muốn cấp credit signup. |
+| `DISABLE_EMAIL_CONFIRMATION` | Chỉ đặt `true` ở local/dev đã kiểm soát. Production phải bỏ trống để bắt buộc xác minh email. |
 
 4. Nhấn **Deploy** → Đợi 1-2 phút.
 
@@ -139,6 +145,13 @@ Vào [Supabase Dashboard](https://supabase.com/dashboard/project/ycrqwekkafexqnl
 ```bash
 curl https://ai-api-gateway.YOUR_SUBDOMAIN.workers.dev/v1/models
 ```
+
+### Kiểm tra chống lạm dụng trước khi mở public
+
+- Chạy migration `006_abuse_hardening.sql` để mỗi user chỉ có một đơn nạp pending.
+- Giữ `ENABLE_SIGNUP_TRIAL_CREDIT` tắt trong production; nếu bật, phải đặt rate limit signup/trial ở Vercel/Cloudflare hoặc một dịch vụ lưu trạng thái dùng chung.
+- Cấu hình rate limit theo IP, user và API key ở edge. Không dùng biến memory trong Next.js hoặc Worker làm rate limiter vì instance có thể scale độc lập.
+- Kiểm tra `Origin` của các mutation cookie-authenticated và giữ auth cookie ở `SameSite=Lax` hoặc chặt hơn.
 
 ---
 

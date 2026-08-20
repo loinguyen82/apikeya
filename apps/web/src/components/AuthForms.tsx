@@ -41,6 +41,8 @@ export function LoginForm() {
     <form onSubmit={handleSubmit} className="stack" style={{ gap: '16px' }}>
       {error && (
         <div
+          role="alert"
+          aria-live="assertive"
           style={{
             background: 'var(--danger-bg)',
             border: '1px solid rgba(239, 68, 68, 0.3)',
@@ -55,10 +57,11 @@ export function LoginForm() {
       )}
 
       <div>
-        <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+        <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
           Địa chỉ Email
         </label>
         <input
+          id="login-email"
           className="input"
           type="email"
           placeholder="loi822004@gmail.com"
@@ -70,11 +73,12 @@ export function LoginForm() {
       </div>
 
       <div>
-        <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+        <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
           Mật khẩu
         </label>
         <div style={{ position: 'relative' }}>
           <input
+            id="login-password"
             className="input"
             type={showPassword ? 'text' : 'password'}
             placeholder="••••••••"
@@ -86,6 +90,7 @@ export function LoginForm() {
           />
           <button
             type="button"
+            aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
             onClick={() => setShowPassword(!showPassword)}
             style={{
               position: 'absolute',
@@ -118,10 +123,12 @@ export function SignupForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmationSent, setConfirmationSent] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setConfirmationSent(false)
     setLoading(true)
 
     try {
@@ -152,8 +159,8 @@ export function SignupForm() {
 
       const loginJson = await loginRes.json()
       if (!loginRes.ok || loginJson.error) {
-        // Nếu tạo xong nhưng cần chuyển qua trang login
-        window.location.href = '/login'
+        setConfirmationSent(true)
+        setLoading(false)
         return
       }
 
@@ -167,8 +174,15 @@ export function SignupForm() {
 
   return (
     <form onSubmit={handleSubmit} className="stack" style={{ gap: '16px' }}>
+      {confirmationSent && (
+        <div className="success-state" role="status" aria-live="polite">
+          Tài khoản đã được tạo. Hãy xác minh email, sau đó đăng nhập để tiếp tục.
+        </div>
+      )}
       {error && (
         <div
+          role="alert"
+          aria-live="assertive"
           style={{
             background: 'var(--danger-bg)',
             border: '1px solid rgba(239, 68, 68, 0.3)',
@@ -183,10 +197,11 @@ export function SignupForm() {
       )}
 
       <div>
-        <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+        <label htmlFor="signup-name" style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
           Tên hiển thị
         </label>
         <input
+          id="signup-name"
           className="input"
           type="text"
           placeholder="Lợi Nguyễn"
@@ -197,10 +212,11 @@ export function SignupForm() {
       </div>
 
       <div>
-        <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+        <label htmlFor="signup-email" style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
           Địa chỉ Email
         </label>
         <input
+          id="signup-email"
           className="input"
           type="email"
           placeholder="ten@gmail.com"
@@ -212,11 +228,12 @@ export function SignupForm() {
       </div>
 
       <div>
-        <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+        <label htmlFor="signup-password" style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
           Mật khẩu (tối thiểu 6 ký tự)
         </label>
         <div style={{ position: 'relative' }}>
           <input
+            id="signup-password"
             className="input"
             type={showPassword ? 'text' : 'password'}
             minLength={6}
@@ -229,6 +246,7 @@ export function SignupForm() {
           />
           <button
             type="button"
+            aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
             onClick={() => setShowPassword(!showPassword)}
             style={{
               position: 'absolute',

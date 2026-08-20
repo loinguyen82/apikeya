@@ -16,11 +16,11 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminSupabase()
 
-    // Tạo user với email_confirm: true để tự động xác thực ngay lập tức
+    // Production yêu cầu xác minh email để giảm account farming và email giả.
     const { data, error } = await admin.auth.admin.createUser({
       email: email.trim().toLowerCase(),
       password,
-      email_confirm: true,
+      email_confirm: process.env.DISABLE_EMAIL_CONFIRMATION === 'true',
       user_metadata: {
         display_name: displayName || email.split('@')[0],
       },
@@ -28,14 +28,17 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       if (error.message.includes('already registered') || error.message.includes('unique constraint')) {
-        return NextResponse.json({ error: 'Email này đã được đăng ký. Vui lòng đăng nhập.' }, { status: 400 })
+        return NextResponse.json({ error: 'Không thể tạo tài khoản với thông tin này. Nếu email đã đăng ký, hãy đăng nhập hoặc khôi phục mật khẩu.' }, { status: 400 })
       }
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    // Tự động khởi tạo Ví tiền và Profile ngay lập tức
+    // Trial credit phải được bật có chủ đích; mặc định tắt để tránh abuse bằng nhiều tài khoản.
     if (data?.user) {
-      await ensureUserAccount(admin, data.user, { seedBalance: true, displayName: displayName || email.split('@')[0] })
+      await ensureUserAccount(admin, data.user, {
+        seedBalance: process.env.ENABLE_SIGNUP_TRIAL_CREDIT === 'true',
+        displayName: displayName || email.split('@')[0],
+      })
     }
 
     return NextResponse.json({ ok: true, user: data.user })

@@ -11,7 +11,7 @@ export default function SignupPage() {
             <span>AI API</span>
           </div>
           <h1>Tạo tài khoản</h1>
-          <p className="muted">Bắt đầu dùng thử miễn phí và nạp VNĐ khi sẵn sàng.</p>
+          <p className="muted">Tạo tài khoản để trải nghiệm Playground và nạp VNĐ khi sẵn sàng.</p>
         </div>
 
         <SignupForm />

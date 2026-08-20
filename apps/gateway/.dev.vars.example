@@ -6,3 +6,4 @@ A6API_KEY=your-a6api-key
 NECO_BASE_URL=https://api.neco.example/v1
 NECO_KEY=your-neco-key
 INTERNAL_ADMIN_TOKEN=your-internal-token
+GATEWAY_USER_ASSERTION_SECRET=your-dedicated-playground-assertion-secret

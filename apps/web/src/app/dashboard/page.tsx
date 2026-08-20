@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
-import { formatVndFromMicros, formatNumber, formatVnd } from '@/lib/money'
+import { formatVndFromMicros, formatNumber, formatVnd, formatCreditFromMicros, formatCarrotFromMicros } from '@/lib/money'
 import { getA6LiveBalance } from '@/lib/a6'
 import { isAdminUser } from '@/lib/admin'
 
@@ -31,26 +31,26 @@ export default async function DashboardPage() {
       .limit(5),
   ])
 
-  const displayBalance = isAdmin && a6Live ? formatVnd(a6Live.vnd) : formatVndFromMicros(wallet?.available_micros ?? '0')
+  const displayBalance = isAdmin && a6Live ? formatVnd(a6Live.vnd) : formatCreditFromMicros(wallet?.available_micros ?? '0')
 
   return (
     <div className="stack" style={{ gap: '28px' }}>
       <div className="row">
         <div>
-          <h1>Tổng quan dịch vụ 👋</h1>
+          <h1>Developer overview</h1>
           <p className="muted">
             {isAdmin
               ? 'Tài khoản Quản trị viên — Số dư tự động đồng bộ theo thời gian thực từ A6API.'
-              : 'Chào mừng bạn! Quản lý số dư, thử nghiệm model và kết nối ứng dụng.'}
+              : 'Một key, một Base URL, mọi model bạn cần cho code agent và ứng dụng. 🥕 1 Credit = 1.000đ.'}
           </p>
         </div>
         <div className="row" style={{ gap: '10px' }}>
           <Link href="/dashboard/playground" className="btn secondary">
-            Dùng thử ngay →
+            Mở Playground →
           </Link>
           {!isAdmin && (
             <Link href="/dashboard/billing" className="btn">
-              Nạp tiền số dư
+              Nạp quota
             </Link>
           )}
         </div>
@@ -59,7 +59,7 @@ export default async function DashboardPage() {
       <div className="kpis">
         <div className="card kpi">
           <div className="row">
-            <span className="muted">Số dư dùng được (VNĐ)</span>
+            <span className="muted">🥕 Credit dùng được</span>
             {isAdmin && (
               <span
                 className="badge"
@@ -85,7 +85,7 @@ export default async function DashboardPage() {
               <span className="muted">A6 live balance hiện chưa khả dụng.</span>
             ) : (
               <>
-                <span className="muted">Đang tạm giữ: {formatVndFromMicros(wallet?.reserved_micros ?? '0')}</span>
+                <span className="muted">Đang tạm giữ: {formatCreditFromMicros(wallet?.reserved_micros ?? '0')}</span>
                 <Link href="/dashboard/billing" style={{ color: 'var(--primary)', fontWeight: 600 }}>
                   Nạp thêm →
                 </Link>
@@ -103,24 +103,24 @@ export default async function DashboardPage() {
         </div>
 
         <div className="card kpi" style={{ justifyContent: 'center' }}>
-          <span className="muted">Lộ trình sử dụng nhanh</span>
+          <span className="muted">Bắt đầu trong 3 bước</span>
           <div style={{ fontSize: '14px', lineHeight: 1.6, fontWeight: 500 }}>
             <div>
               1.{' '}
               <Link href="/dashboard/playground" style={{ color: 'var(--primary)' }}>
-                Dùng thử trên Web
+                Chọn model và chạy
               </Link>
             </div>
             <div>
               2.{' '}
-              <Link href="/dashboard/models" style={{ color: 'var(--primary)' }}>
-                Xem danh mục Models
+              <Link href="/docs" style={{ color: 'var(--primary)' }}>
+                Đổi Base URL
               </Link>
             </div>
             <div>
               3.{' '}
               <Link href="/dashboard/api-keys" style={{ color: 'var(--primary)' }}>
-                Tạo API key & Tích hợp
+                Tạo API key
               </Link>
             </div>
           </div>
@@ -129,48 +129,50 @@ export default async function DashboardPage() {
 
       <div className="card stack">
         <div className="row">
-          <h3>5 Lượt sử dụng gần nhất</h3>
+          <h3>Recent usage</h3>
           <Link href="/dashboard/usage" className="muted" style={{ fontSize: '13px' }}>
             Xem tất cả →
           </Link>
         </div>
 
         {recentRequests && recentRequests.length > 0 ? (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Thời gian</th>
-                <th>Mô hình</th>
-                <th>Tổng Token</th>
-                <th>Chi phí (VNĐ)</th>
-                <th>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentRequests.map((r: any) => (
-                <tr key={r.id}>
-                  <td>{new Date(r.created_at).toLocaleString('vi-VN')}</td>
-                  <td>
-                    <code>{r.model_id}</code>
-                  </td>
-                  <td>{formatNumber((r.input_tokens ?? 0) + (r.output_tokens ?? 0))}</td>
-                  <td style={{ fontWeight: 600 }}>{formatVndFromMicros(r.retail_cost_micros ?? '0')}</td>
-                  <td>
-                    <span
-                      className="badge"
-                      style={{
-                        background: r.status === 'settled' ? 'var(--success-bg)' : 'var(--primary-light)',
-                        color: r.status === 'settled' ? 'var(--success)' : '#60a5fa',
-                        borderColor: r.status === 'settled' ? 'rgba(16,185,129,0.3)' : 'rgba(96,165,250,0.3)',
-                      }}
-                    >
-                      {r.status === 'settled' ? 'Thành công' : r.status}
-                    </span>
-                  </td>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Thời gian</th>
+                  <th>Mô hình</th>
+                  <th>Tổng Token</th>
+                  <th>Credit 🥕</th>
+                  <th>Trạng thái</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {recentRequests.map((r: any) => (
+                  <tr key={r.id}>
+                    <td>{new Date(r.created_at).toLocaleString('vi-VN')}</td>
+                    <td>
+                      <code>{r.model_id}</code>
+                    </td>
+                    <td>{formatNumber((r.input_tokens ?? 0) + (r.output_tokens ?? 0))}</td>
+                    <td style={{ fontWeight: 600 }}>{formatCarrotFromMicros(r.retail_cost_micros ?? '0')}</td>
+                    <td>
+                      <span
+                        className="badge"
+                        style={{
+                          background: r.status === 'settled' ? 'var(--success-bg)' : 'var(--primary-light)',
+                          color: r.status === 'settled' ? 'var(--success)' : '#60a5fa',
+                          borderColor: r.status === 'settled' ? 'rgba(16,185,129,0.3)' : 'rgba(96,165,250,0.3)',
+                        }}
+                      >
+                        {r.status === 'settled' ? 'Thành công' : r.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>
             Bạn chưa có lượt sử dụng nào. Hãy vào trang{' '}

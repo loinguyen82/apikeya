@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { formatVietnamDate, formatVietnamDateTime } from '@/lib/date'
 
 interface KeyItem {
   id: string
@@ -17,6 +18,7 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
   const [creating, setCreating] = useState(false)
   const [newKeyPlaintext, setNewKeyPlaintext] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -82,10 +84,15 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
     }
   }
 
-  function copyKey(text: string) {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
+  async function copyKey(text: string) {
+    setCopyError(false)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      setCopyError(true)
+    }
   }
 
   return (
@@ -173,6 +180,7 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
               {copied ? '✓ Đã sao chép!' : '📋 Sao chép Key'}
             </button>
           </div>
+          {copyError && <p className="muted" role="alert">Không thể tự động sao chép. Hãy bôi đen key và sao chép thủ công.</p>}
         </div>
       )}
 
@@ -198,7 +206,7 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
       <div className="card stack">
         <h3>Danh sách API Key ({keys.length})</h3>
         {keys.length > 0 ? (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
@@ -233,9 +241,9 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
                       </span>
                     </td>
                     <td className="muted">
-                      {k.last_used_at ? new Date(k.last_used_at).toLocaleString('vi-VN') : 'Chưa sử dụng'}
+                      {k.last_used_at ? formatVietnamDateTime(k.last_used_at) : 'Chưa sử dụng'}
                     </td>
-                    <td className="muted">{new Date(k.created_at).toLocaleDateString('vi-VN')}</td>
+                    <td className="muted">{formatVietnamDate(k.created_at)}</td>
                     <td>
                       {k.status === 'active' && (
                         <button
@@ -278,7 +286,7 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
           </div>
           <div>
             • <strong>API Key:</strong> Dán mã khóa dạng{' '}
-            <code>ak_live_...</code> bạn vừa tạo ở trên.
+            <code>sk-...</code> bạn vừa tạo ở trên.
           </div>
           <div>
             • Hỗ trợ mọi thư viện OpenAI SDK, LangChain, LlamaIndex, Cursor IDE, VS Code Continue, NextChat,...

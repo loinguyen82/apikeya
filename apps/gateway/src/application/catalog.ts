@@ -5,17 +5,33 @@ export interface RuntimeModel extends ModelCatalogItem {
   providers: ProviderCandidate[]
 }
 
+const modelAliases: Record<string, string> = {
+  gpt: 'gpt-5.6-luna',
+  luna: 'gpt-5.6-luna',
+  terra: 'gpt-5.6-terra',
+  sol: 'gpt-5.6-sol',
+  sonnet: 'claude-sonnet-5',
+  claude: 'claude-sonnet-5',
+  kimi: 'kimi-k2.6',
+  v4: 'deepseek-v4',
+}
+
+export function resolveModelAlias(modelId: string): string {
+  return modelAliases[modelId.trim().toLowerCase()] ?? modelId
+}
+
 export async function loadRuntimeModel(
   db: SupabaseClient,
   modelId: string,
   envSecrets: Record<string, string>
 ): Promise<RuntimeModel> {
+  const canonicalModelId = resolveModelAlias(modelId)
   const { data: model, error } = await db
     .from('models')
     .select(
       'id,display_name,description,tags,status,pricing_mode,retail_flat_micros_per_mtoken,retail_input_micros_per_mtoken,retail_output_micros_per_mtoken,default_max_output_tokens,max_output_tokens,streaming_enabled'
     )
-    .eq('id', modelId)
+    .eq('id', canonicalModelId)
     .maybeSingle()
 
   if (error || !model || model.status === 'disabled') {
@@ -27,7 +43,7 @@ export async function loadRuntimeModel(
     .select(
       'provider_id,upstream_model,priority,supports_stream_usage,upstream_input_micros_per_mtoken,upstream_output_micros_per_mtoken,providers!inner(base_url,api_key_secret_name,status,timeout_ms,safe_no_charge_statuses)'
     )
-    .eq('model_id', modelId)
+    .eq('model_id', canonicalModelId)
     .eq('enabled', true)
     .order('priority', { ascending: true })
 

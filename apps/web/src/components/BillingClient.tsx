@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState } from 'react'
-import { formatVnd, formatVndFromMicros } from '@/lib/money'
+import { formatVietnamDateTime } from '@/lib/date'
+import { formatVnd, formatVndFromMicros, formatCreditFromMicros, formatCreditFromVnd } from '@/lib/money'
 import { defaultBankConfig, generateVietQrUrl } from '@/lib/bank-config'
 
 interface TopupData {
@@ -11,6 +12,7 @@ interface TopupData {
   bonus_micros: string
   status: string
   created_at: string
+  expires_at: string
 }
 
 export function BillingClient({
@@ -24,25 +26,33 @@ export function BillingClient({
 }) {
   const [selectedAmount, setSelectedAmount] = useState<number>(100000)
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState(false)
   const [creating, setCreating] = useState(false)
 
   const packages = [
-    { amount: 50000, label: '50.000đ', bonus: 0, bonusLabel: 'Tiêu chuẩn' },
-    { amount: 100000, label: '100.000đ', bonus: 0, bonusLabel: 'Phổ biến nhất' },
-    { amount: 200000, label: '200.000đ', bonus: 0, bonusLabel: 'Tiết kiệm' },
-    { amount: 500000, label: '500.000đ', bonus: 25000, bonusLabel: '+5% Thưởng (+25k)' },
-    { amount: 1000000, label: '1.000.000đ', bonus: 100000, bonusLabel: '+10% Thưởng (+100k)' },
-    { amount: 2000000, label: '2.000.000đ', bonus: 300000, bonusLabel: '+15% Thưởng (+300k)' },
+    { amount: 50000, label: '🥕 50 Credit', bonus: 0, bonusLabel: '50.000đ · Tiêu chuẩn' },
+    { amount: 100000, label: '🥕 100 Credit', bonus: 0, bonusLabel: '100.000đ · Phổ biến nhất' },
+    { amount: 200000, label: '🥕 200 Credit', bonus: 0, bonusLabel: '200.000đ · Tiết kiệm' },
+    { amount: 500000, label: '🥕 525 Credit', bonus: 25000, bonusLabel: '500.000đ · +5% thưởng' },
+    { amount: 1000000, label: '🥕 1.100 Credit', bonus: 100000, bonusLabel: '1.000.000đ · +10% thưởng' },
+    { amount: 2000000, label: '🥕 2.300 Credit', bonus: 300000, bonusLabel: '2.000.000đ · +15% thưởng' },
   ]
 
-  function copyToClipboard(text: string, field: string) {
-    navigator.clipboard.writeText(text)
-    setCopiedField(field)
-    setTimeout(() => setCopiedField(null), 2000)
+  async function copyToClipboard(text: string, field: string) {
+    setCopyError(false)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(null), 2000)
+    } catch {
+      setCopyError(true)
+    }
   }
 
   const memo = currentTopup ? `NAP ${currentTopup.id.slice(0, 8).toUpperCase()}` : ''
+  const topupExpired = currentTopup ? new Date(currentTopup.expires_at) <= new Date() : false
   const qrUrl = currentTopup
+    && !topupExpired
     ? generateVietQrUrl({
         amount: currentTopup.payable_vnd,
         memo,
@@ -56,16 +66,17 @@ export function BillingClient({
         <p className="muted">
           Chuyển khoản qua ngân hàng (VietQR). Admin sẽ xác nhận và cộng credit vào tài khoản của bạn ngay khi nhận được giao dịch.
         </p>
+        <p className="credit-note">🥕 1 Credit = 1.000đ · Credit không hết hạn và được trừ theo token thực tế.</p>
       </div>
 
       <div className="kpis">
         <div className="card kpi">
-          <span className="muted">Số dư hiện tại</span>
+          <span className="muted">🥕 Credit hiện tại</span>
           <strong style={{ color: 'var(--primary-hover)', fontSize: '32px' }}>
-            {formatVndFromMicros(wallet?.available_micros ?? '0')}
+            {formatCreditFromMicros(wallet?.available_micros ?? '0')}
           </strong>
           <span className="muted" style={{ fontSize: '13px' }}>
-            Đang tạm giữ xử lý: {formatVndFromMicros(wallet?.reserved_micros ?? '0')}
+            Đang tạm giữ xử lý: {formatCreditFromMicros(wallet?.reserved_micros ?? '0')}
           </span>
         </div>
 
@@ -109,7 +120,7 @@ export function BillingClient({
           <form action="/api/topups" method="post" onSubmit={() => setCreating(true)}>
             <input type="hidden" name="amount" value={selectedAmount} />
             <button className="btn" type="submit" disabled={creating} style={{ width: '100%', padding: '12px' }}>
-              {creating ? 'Đang tạo đơn nạp...' : `Tạo yêu cầu nạp ${formatVnd(selectedAmount)} (VietQR) →`}
+              {creating ? 'Đang tạo đơn nạp...' : `Tạo yêu cầu nạp ${formatVnd(selectedAmount)} = ${formatCreditFromVnd(selectedAmount)} (VietQR) →`}
             </button>
           </form>
         </div>
@@ -134,12 +145,12 @@ export function BillingClient({
                 <span
                   className="badge"
                   style={{
-                    background: currentTopup.status === 'paid' ? 'var(--success-bg)' : 'var(--warning-bg)',
-                    color: currentTopup.status === 'paid' ? 'var(--success)' : 'var(--warning)',
+                    background: currentTopup.status === 'paid' ? 'var(--success-bg)' : topupExpired ? 'var(--danger-bg)' : 'var(--warning-bg)',
+                    color: currentTopup.status === 'paid' ? 'var(--success)' : topupExpired ? 'var(--danger)' : 'var(--warning)',
                     fontWeight: 600,
                   }}
                 >
-                  {currentTopup.status === 'paid' ? '✓ ĐÃ DUYỆT THÀNH CÔNG' : '⏳ ĐANG CHỜ CHUYỂN KHOẢN'}
+                  {currentTopup.status === 'paid' ? '✓ ĐÃ DUYỆT THÀNH CÔNG' : topupExpired ? 'ĐÃ HẾT HẠN' : '⏳ ĐANG CHỜ CHUYỂN KHOẢN'}
                 </span>
               </div>
               <h2 style={{ fontSize: '18px', marginTop: '6px' }}>Thông tin chuyển khoản ngân hàng</h2>
@@ -147,7 +158,7 @@ export function BillingClient({
             {currentTopup.status === 'paid' && (
               <div style={{ color: 'var(--success)', fontWeight: 700, fontSize: '16px' }}>
                 +
-                {formatVndFromMicros(
+                {formatCreditFromMicros(
                   BigInt(currentTopup.amount_micros) + BigInt(currentTopup.bonus_micros)
                 )}{' '}
                 đã vào ví
@@ -158,7 +169,12 @@ export function BillingClient({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
             {/* Cột Trái: Mã QR */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-              <div
+              {topupExpired ? (
+                <div className="empty-state" style={{ minHeight: '220px', justifyContent: 'center' }}>
+                  <strong>Đơn nạp đã hết hạn</strong>
+                  <span className="muted">Tạo một yêu cầu mới để nhận mã QR hợp lệ.</span>
+                </div>
+              ) : <div
                 style={{
                   background: '#fff',
                   padding: '12px',
@@ -173,7 +189,7 @@ export function BillingClient({
                   alt="Mã VietQR nạp tiền"
                   style={{ width: '220px', height: '220px', display: 'block', objectFit: 'contain' }}
                 />
-              </div>
+              </div>}
               <span className="muted" style={{ fontSize: '12px', textAlign: 'center' }}>
                 📱 Mở App ngân hàng bất kỳ để quét mã tự động điền thông tin
               </span>
@@ -294,6 +310,8 @@ export function BillingClient({
             </div>
           </div>
 
+          {copyError && <p className="muted" role="alert">Không thể tự động sao chép. Vui lòng sao chép nội dung thủ công.</p>}
+
           <div
             style={{
               padding: '12px 16px',
@@ -314,13 +332,14 @@ export function BillingClient({
       <div className="card stack">
         <h3>Lịch sử giao dịch nạp tiền</h3>
         {recentTopups && recentTopups.length > 0 ? (
+          <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
                 <th>Thời gian</th>
                 <th>Mã giao dịch</th>
                 <th>Số tiền nạp</th>
-                <th>Số dư nhận được</th>
+                <th>Credit nhận được</th>
                 <th>Trạng thái</th>
                 <th>Thao tác</th>
               </tr>
@@ -328,13 +347,13 @@ export function BillingClient({
             <tbody>
               {recentTopups.map((t) => (
                 <tr key={t.id}>
-                  <td>{new Date(t.created_at).toLocaleString('vi-VN')}</td>
+                  <td>{formatVietnamDateTime(t.created_at)}</td>
                   <td>
                     <code>{t.id.slice(0, 8).toUpperCase()}</code>
                   </td>
                   <td>{formatVnd(t.payable_vnd)}</td>
                   <td style={{ fontWeight: 600, color: 'var(--success)' }}>
-                    {formatVndFromMicros(BigInt(t.amount_micros) + BigInt(t.bonus_micros))}
+                    {formatCreditFromMicros(BigInt(t.amount_micros) + BigInt(t.bonus_micros))}
                   </td>
                   <td>
                     <span
@@ -377,6 +396,7 @@ export function BillingClient({
               ))}
             </tbody>
           </table>
+          </div>
         ) : (
           <div className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>
             Bạn chưa có giao dịch nạp tiền nào.

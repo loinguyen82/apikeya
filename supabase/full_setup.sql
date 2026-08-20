@@ -202,6 +202,7 @@ create table if not exists public.topups (
   created_at timestamptz not null default now()
 );
 create unique index if not exists topups_external_unique on public.topups(payment_provider,external_id) where external_id is not null;
+create unique index if not exists topups_one_pending_per_user on public.topups(user_id) where status='pending';
 
 -- ----------------------------------------------------------------------------
 -- 3. USER BOOTSTRAP TRIGGER
@@ -301,22 +302,28 @@ declare
   refund bigint;
   gap bigint;
 begin
+  if p_retail_cost_micros < 0 or p_upstream_cost_micros < 0
+    or p_input_tokens < 0 or p_output_tokens < 0 then
+    raise exception 'INVALID_SETTLEMENT_VALUES';
+  end if;
+  if p_provider_id is null or length(trim(p_provider_id)) = 0 then
+    raise exception 'PROVIDER_REQUIRED';
+  end if;
   select * into r from public.api_requests where id=p_request_id for update;
   if not found then raise exception 'REQUEST_NOT_FOUND'; end if;
   if r.status='settled' then return r; end if;
   if r.status='released' then raise exception 'REQUEST_ALREADY_RELEASED'; end if;
+  if r.status='failed_ambiguous' then raise exception 'REQUEST_NOT_SETTLEABLE'; end if;
+  if r.status not in ('reserved', 'dispatching', 'streaming') then raise exception 'INVALID_REQUEST_STATE'; end if;
   select * into w from public.wallets where user_id=r.user_id for update;
+  if not found then raise exception 'WALLET_NOT_FOUND'; end if;
 
   if p_retail_cost_micros <= r.reserve_micros then
     refund := r.reserve_micros - p_retail_cost_micros;
     update public.wallets set reserved_micros=reserved_micros-r.reserve_micros, available_micros=available_micros+refund, updated_at=now() where user_id=r.user_id;
-    if refund>0 then
-      insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key)
-        values(r.user_id,'settle_refund',refund,-r.reserve_micros,'api_request',r.id,'settle:'||r.id::text);
-    else
-      insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key)
-        values(r.user_id,'settle_refund',0,-r.reserve_micros,'api_request',r.id,'settle:'||r.id::text);
-    end if;
+    insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key)
+      values(r.user_id,'settle_refund',refund,-r.reserve_micros,'api_request',r.id,'settle:'||r.id::text)
+      on conflict do nothing;
     gap := 0;
   else
     extra_needed := p_retail_cost_micros - r.reserve_micros;
@@ -324,7 +331,8 @@ begin
     gap := extra_needed - extra_collected;
     update public.wallets set reserved_micros=reserved_micros-r.reserve_micros, available_micros=available_micros-extra_collected, updated_at=now() where user_id=r.user_id;
     insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key,metadata)
-      values(r.user_id,'settle_extra',-extra_collected,-r.reserve_micros,'api_request',r.id,'settle:'||r.id::text,jsonb_build_object('billing_gap_micros',gap));
+      values(r.user_id,'settle_extra',-extra_collected,-r.reserve_micros,'api_request',r.id,'settle:'||r.id::text,jsonb_build_object('billing_gap_micros',gap))
+      on conflict do nothing;
   end if;
 
   update public.api_requests set
@@ -347,6 +355,7 @@ begin
   if not found then raise exception 'REQUEST_NOT_FOUND'; end if;
   if r.status='released' then return r; end if;
   if r.status='settled' then raise exception 'REQUEST_ALREADY_SETTLED'; end if;
+  if r.status not in ('reserved', 'dispatching', 'streaming') then raise exception 'REQUEST_NOT_RELEASEABLE'; end if;
   
   update public.wallets set available_micros=available_micros+r.reserve_micros, reserved_micros=reserved_micros-r.reserve_micros, updated_at=now() where user_id=r.user_id;
   insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key)

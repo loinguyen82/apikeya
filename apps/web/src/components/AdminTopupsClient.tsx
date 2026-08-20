@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { formatVnd, formatVndFromMicros } from '@/lib/money'
+import { formatVietnamDateTime } from '@/lib/date'
 
 interface TopupItem {
   id: string
@@ -204,7 +205,7 @@ export function AdminTopupsClient({
                     const isBusy = loadingId === t.id
                     return (
                       <tr key={t.id}>
-                        <td>{new Date(t.created_at).toLocaleString('vi-VN')}</td>
+                        <td>{formatVietnamDateTime(t.created_at)}</td>
                         <td>
                           <span
                             className="badge"
@@ -349,7 +350,7 @@ export function AdminTopupsClient({
                 <tbody>
                   {historyTopups.map((t) => (
                     <tr key={t.id}>
-                      <td>{new Date(t.created_at).toLocaleString('vi-VN')}</td>
+                      <td>{formatVietnamDateTime(t.created_at)}</td>
                       <td>
                         <code>{t.id.slice(0, 8).toUpperCase()}</code>
                       </td>

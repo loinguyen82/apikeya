@@ -5,12 +5,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const nav = [
-  ['/dashboard', '📊 Tổng quan'],
-  ['/dashboard/playground', '🧪 Dùng thử (Playground)'],
-  ['/dashboard/models', '🤖 Danh mục Models'],
-  ['/dashboard/api-keys', '🔑 Quản lý API Key'],
-  ['/dashboard/billing', '💳 Nạp tiền VietQR'],
-  ['/dashboard/usage', '📈 Lịch sử chi tiêu'],
+  ['/dashboard', 'Overview'],
+  ['/dashboard/models', 'Model available'],
+  ['/docs', '⚙️ Cấu hình sẵn'],
+  ['/dashboard/playground', 'Test model'],
+  ['/dashboard/usage', 'Request logs'],
+  ['/dashboard/api-keys', 'API key'],
+  ['/dashboard/billing', '🥕 Nạp quota'],
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -18,13 +19,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span>⚡</span>
-          <span>AI API Reseller</span>
+      <header className="console-header">
+        <div className="console-header-inner">
+          <Link href="/dashboard" className="console-brand">
+            <span className="console-mark">V</span>
+            <span>
+              <strong>AI API</strong>
+              <small>Developer Console</small>
+            </span>
+          </Link>
+
+          <div className="console-actions">
+            <Link href="/docs" className="console-action-link">Docs</Link>
+            <Link href="/admin" className="console-action-link">🛡️ Admin</Link>
+            <form action="/auth/signout" method="post">
+              <button type="submit" className="console-logout">Đăng xuất</button>
+            </form>
+          </div>
         </div>
 
-        <nav className="nav" style={{ marginTop: '12px' }}>
+        <nav className="console-tabs" aria-label="Điều hướng dashboard">
           {nav.map(([href, label]) => {
             const isActive = pathname === href || (href !== '/dashboard' && pathname?.startsWith(href))
             return (
@@ -34,49 +48,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )
           })}
         </nav>
-
-        <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--line)' }} className="stack">
-          <Link
-            href="/admin"
-            style={{
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-sm)',
-              background: 'rgba(99, 102, 241, 0.1)',
-              color: 'var(--primary-hover)',
-              fontSize: '13px',
-              fontWeight: 600,
-              textDecoration: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            🛡️ Cổng Quản Trị Admin
-          </Link>
-
-          <Link href="/docs" className="muted" style={{ fontSize: '13px', textDecoration: 'none', marginTop: '4px' }}>
-            📖 Tài liệu tích hợp API
-          </Link>
-
-          <form action="/auth/signout" method="post" style={{ marginTop: '6px' }}>
-            <button
-              type="submit"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--danger)',
-                cursor: 'pointer',
-                fontSize: '13px',
-                padding: 0,
-                fontWeight: 500,
-              }}
-            >
-              🚪 Đăng xuất
-            </button>
-          </form>
-        </div>
-      </aside>
+      </header>
       <main className="main">{children}</main>
+      <footer className="console-footer">
+        <div>
+          <strong>AI API Developer Console</strong>
+          <span>Quota, model, test request và logs trong 24 giờ.</span>
+        </div>
+        <div className="console-footer-links">
+          <span>Chính sách</span>
+          <Link href="/docs">Tài liệu</Link>
+          <Link href="/dashboard/billing">Thanh toán</Link>
+          <Link href="/dashboard/usage">Lịch sử request</Link>
+        </div>
+      </footer>
     </div>
   )
 }

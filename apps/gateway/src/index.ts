@@ -5,6 +5,8 @@ import { requireApiKey } from './middleware/api-key.js'
 import { chatRoute } from './routes/chat.js'
 import { modelsRoute } from './routes/models.js'
 import { internalPlaygroundRoute } from './routes/internal-playground.js'
+import { responsesRoute } from './routes/responses.js'
+import { messagesRoute } from './routes/messages.js'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -12,7 +14,7 @@ app.use(
   '*',
   cors({
     origin: '*',
-    allowHeaders: ['authorization', 'content-type', 'idempotency-key', 'x-internal-token', 'x-user-id'],
+    allowHeaders: ['authorization', 'x-api-key', 'anthropic-version', 'content-type', 'idempotency-key', 'x-internal-token', 'x-user-id', 'x-user-assertion'],
     allowMethods: ['GET', 'POST', 'OPTIONS'],
   })
 )
@@ -24,6 +26,14 @@ app.route('/v1/models', modelsRoute)
 app.use('/v1/chat/completions/*', requireApiKey)
 app.use('/v1/chat/completions', requireApiKey)
 app.route('/v1/chat/completions', chatRoute)
+
+app.use('/v1/responses/*', requireApiKey)
+app.use('/v1/responses', requireApiKey)
+app.route('/v1/responses', responsesRoute)
+
+app.use('/v1/messages/*', requireApiKey)
+app.use('/v1/messages', requireApiKey)
+app.route('/v1/messages', messagesRoute)
 
 app.route('/internal/playground/chat', internalPlaygroundRoute)
 
@@ -41,6 +51,12 @@ app.onError((err, c) => {
         },
       },
       402
+    )
+  }
+  if (err.message.includes('IDEMPOTENCY_KEY_TOO_LONG')) {
+    return c.json(
+      { error: { code: 'IDEMPOTENCY_KEY_TOO_LONG', message: 'Idempotency-Key quá dài.', type: 'invalid_request_error' } },
+      400
     )
   }
   if (err.message === 'MODEL_NOT_AVAILABLE') {
