@@ -8,7 +8,6 @@ export default async function PlaygroundPage({
 }) {
   const { supabase } = await requireUser()
   const params = await searchParams
-
   const { data: models } = await supabase
     .from('models')
     .select('id,display_name')
@@ -19,14 +18,14 @@ export default async function PlaygroundPage({
   const selected = safeModels.some((m) => m.id === params.model) ? params.model! : safeModels[0]?.id ?? ''
 
   return (
-    <div className="stack" style={{ gap: '20px' }}>
-      <div>
-        <h1>Dùng thử Mô hình AI 🧪</h1>
-        <p className="muted">
-          Thử nghiệm prompt trực tiếp trên trình duyệt. Tiền được trừ tự động theo số token thực tế của phiên này.
-        </p>
-      </div>
-
+    <div className="page-stack">
+      <header className="page-head">
+        <div className="page-head-copy">
+          <div className="eyebrow">Playground</div>
+          <h1>Thử model trước khi tích hợp</h1>
+          <p>Chọn model, gửi prompt và xem phản hồi trực tiếp. Phiên thử dùng tài khoản hiện tại và trừ theo token thực tế.</p>
+        </div>
+      </header>
       <PlaygroundClient models={safeModels} initialModel={selected} />
     </div>
   )
