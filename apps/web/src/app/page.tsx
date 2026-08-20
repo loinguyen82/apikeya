@@ -1,54 +1,19 @@
 import Link from 'next/link'
 
 const models = [
-  {
-    id: 'kimi-k2.6',
-    name: 'Kimi K2.6',
-    price: '0,3 🥕 / 1M token',
-    approx: '~0,03 🥕 cho 100k token',
-    tag: 'Code • Reasoning Rẻ',
-    desc: 'Tốc độ nhanh, chi phí siêu rẻ, phù hợp dịch thuật và các tác vụ trò chuyện thường ngày.',
-  },
-  {
-    id: 'deepseek-v4',
-    name: 'DeepSeek V4',
-    price: '0,8 🥕 / 1M token',
-    approx: '~0,08 🥕 cho 100k token',
-    tag: 'Code • Reasoning Rẻ',
-    desc: 'Mô hình suy luận và hỗ trợ code với hiệu năng vượt trội và chi phí tối ưu.',
-  },
-  {
-    id: 'claude-sonnet-5',
-    name: 'Claude Sonnet 5',
-    price: '2,5 🥕 / 1M token',
-    approx: '~0,25 🥕 cho 100k token',
-    tag: 'Lập trình • Phân tích sâu',
-    desc: 'Khả năng viết code xuất sắc, phân tích logic ngữ cảnh dài và tạo sinh tài liệu chất lượng cao.',
-  },
-  {
-    id: 'gpt-5.6-terra',
-    name: 'GPT-5.6 Terra',
-    price: '3 🥕 / 1M token',
-    approx: '~0,3 🥕 cho 100k token',
-    tag: 'Đa năng • Cân bằng',
-    desc: 'Cân bằng lý tưởng giữa tốc độ phản hồi và độ thông minh trong xử lý văn bản.',
-  },
-  {
-    id: 'gpt-5.6-luna',
-    name: 'GPT-5.6 Luna',
-    price: '3,5 🥕 / 1M token',
-    approx: '~0,35 🥕 cho 100k token',
-    tag: 'Sáng tạo • Viết lách',
-    desc: 'Phiên bản chuyên biệt cho sáng tạo nội dung, lập kế hoạch và tác vụ phức tạp.',
-  },
-  {
-    id: 'gpt-5.6-sol',
-    name: 'GPT-5.6 Sol',
-    price: '4 🥕 / 1M token',
-    approx: '~0,4 🥕 cho 100k token',
-    tag: 'Reasoning • Siêu cấp',
-    desc: 'Mô hình suy luận mạnh mẽ nhất cho các bài toán khoa học, toán học và kỹ thuật khó.',
-  },
+  { name: 'Kimi K2.6', price: '0,3 cr / 1M', purpose: 'Code, chat dài, automation' },
+  { name: 'DeepSeek V4', price: '0,8 cr / 1M', purpose: 'Reasoning và code tiết kiệm' },
+  { name: 'Claude Sonnet 5', price: '2,5 cr / 1M', purpose: 'Lập trình và phân tích sâu' },
+  { name: 'GPT-5.6 Terra', price: '3 cr / 1M', purpose: 'Đa năng, cân bằng' },
+  { name: 'GPT-5.6 Luna', price: '3,5 cr / 1M', purpose: 'Sáng tạo và lập kế hoạch' },
+  { name: 'GPT-5.6 Sol', price: '4 cr / 1M', purpose: 'Reasoning kỹ thuật khó' },
+]
+
+const providers = [
+  ['OpenAI', 'GPT'],
+  ['Anthropic', 'Claude'],
+  ['Kimi', 'Moonshot'],
+  ['DeepSeek', 'DeepSeek'],
 ]
 
 export default function HomePage() {
@@ -56,115 +21,116 @@ export default function HomePage() {
     <>
       <header className="topbar">
         <div className="container row">
-          <div className="brand">
-            <span>⚡</span>
-            <span>AI API</span>
-          </div>
-          <div className="row" style={{ gap: '12px' }}>
-            <a href="#pricing" className="btn secondary" style={{ border: 'none' }}>
-              Bảng giá
-            </a>
-            <Link href="/docs" className="btn secondary" style={{ border: 'none' }}>
-              Tài liệu
-            </Link>
-            <Link href="/login" className="btn secondary">
-              Đăng nhập
-            </Link>
-            <Link href="/signup" className="btn">
-              Bắt đầu ngay
-            </Link>
+          <Link href="/" className="landing-brand" aria-label="Apikeya home">
+            <span className="brand-mark">A</span>
+            <span>Apikeya</span>
+          </Link>
+
+          <div className="row" style={{ gap: '10px' }}>
+            <a href="#pricing" className="btn secondary" style={{ border: 'none' }}>Bảng giá</a>
+            <Link href="/docs" className="btn secondary" style={{ border: 'none' }}>Tài liệu</Link>
+            <Link href="/login" className="btn secondary">Đăng nhập</Link>
+            <Link href="/signup" className="btn">Bắt đầu</Link>
           </div>
         </div>
       </header>
 
-      <main className="container">
-        <section className="hero">
-          <div className="stack">
-            <span className="badge" style={{ alignSelf: 'flex-start' }}>
-              OPENAI-COMPATIBLE / CODE AGENT READY
-            </span>
-            <h1 style={{ fontSize: '38px', lineHeight: 1.2 }}>
-              Một API key. Nhiều model mạnh. Chạy code agent cả ngày.
-            </h1>
-            <p className="muted" style={{ fontSize: '16px' }}>
-              Một Base URL cho Claude, GPT, Kimi và DeepSeek. Nạp bằng VNĐ, theo dõi quota minh bạch, giữ nguyên workflow
-              của Codex, Claude Code, Cursor và OpenAI SDK.
-            </p>
-            <div className="row" style={{ justifyContent: 'flex-start', marginTop: '12px' }}>
-              <Link className="btn" href="/signup" style={{ padding: '12px 24px', fontSize: '15px' }}>
-                Trải nghiệm Playground →
-              </Link>
-              <a className="btn secondary" href="#pricing" style={{ padding: '12px 24px', fontSize: '15px' }}>
-                Xem bảng giá 🥕
-              </a>
-            </div>
-          </div>
-
-          <div className="terminal">
-            <div className="terminal-bar"><span /><span /><span /></div>
-            <code><span className="prompt">$</span> export OPENAI_BASE_URL=https://ai-api-gateway.loi822004.workers.dev/v1{`\n`}<span className="prompt">$</span> codex --model gpt-5.6-luna{`\n`}<span style={{ color: 'var(--primary-hover)' }}>✓ gateway connected · quota tracked · 6 models ready</span></code>
-          </div>
-        </section>
-
-        <section className="card" style={{ marginBottom: '48px' }}>
-          <div className="row" style={{ marginBottom: '20px' }}>
-            <div>
-              <span className="badge">BẮT ĐẦU TRONG 3 BƯỚC</span>
-              <h2 style={{ marginTop: '10px' }}>Từ key đến request đầu tiên.</h2>
-            </div>
-            <Link href="/docs" className="muted">Xem tài liệu →</Link>
-          </div>
-          <div className="flow-steps">
-            <div className="flow-step"><strong>01 · Tạo API key</strong><span className="muted">Tạo một key duy nhất trong dashboard và theo dõi quota theo request.</span></div>
-            <div className="flow-step"><strong>02 · Đổi Base URL</strong><span className="muted">Giữ nguyên SDK hoặc code agent, chỉ đổi endpoint sang gateway của bạn.</span></div>
-            <div className="flow-step"><strong>03 · Chọn model</strong><span className="muted">Chọn model theo việc cần làm: code, chat dài, reasoning hoặc automation.</span></div>
-          </div>
-        </section>
-
-        <section id="pricing" style={{ padding: '48px 0 80px' }}>
-          <div className="stack" style={{ marginBottom: '32px' }}>
-            <h2>🥕 Bảng giá niêm yết minh bạch</h2>
+      <main>
+        <section className="container hero-refresh">
+          <div className="hero-copy">
+            <div className="hero-eyebrow">API gateway cho developer Việt Nam</div>
+            <h1>Một API cho nhiều model. Thanh toán bằng VNĐ.</h1>
             <p className="muted">
-              Được tính toán theo lượng token sử dụng thực tế. 1 triệu token tương đương khoảng 750.000 từ tiếng Việt.
+              Dùng Claude, GPT, Kimi và DeepSeek qua một Base URL. Giữ nguyên SDK và workflow hiện tại,
+              đồng thời theo dõi request, quota và chi phí trong một console duy nhất.
             </p>
+
+            <div className="hero-actions">
+              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Mở Playground</Link>
+              <a href="#pricing" className="btn secondary" style={{ padding: '12px 20px' }}>Xem bảng giá</a>
+            </div>
+
+            <div className="hero-proof" aria-label="Điểm nổi bật">
+              <span>1 API key</span>
+              <span>Thanh toán VNĐ</span>
+              <span>Chi phí theo request</span>
+              <span>OpenAI-compatible</span>
+            </div>
           </div>
 
-          <div className="grid">
-            {models.map((m) => (
-              <div className="card stack" key={m.id} style={{ justifyContent: 'space-between' }}>
-                <div className="stack" style={{ gap: '12px' }}>
-                  <span className="badge" style={{ alignSelf: 'flex-start' }}>
-                    {m.tag}
-                  </span>
-                  <h3>{m.name}</h3>
-                  <div className="price">{m.price}</div>
-                  <div className="muted" style={{ fontSize: '13px', color: 'var(--success)' }}>
-                    {m.approx}
-                  </div>
-                  <p className="muted" style={{ fontSize: '14px' }}>
-                    {m.desc}
-                  </p>
-                </div>
-                <div style={{ marginTop: '20px' }}>
-                  <Link href="/signup" className="btn" style={{ width: '100%' }}>
-                    Dùng thử mô hình này
-                  </Link>
-                </div>
+          <div className="quickstart-card" aria-label="Quick start">
+            <div className="quickstart-head">
+              <strong>Quick start</strong>
+              <span>OpenAI-compatible</span>
+            </div>
+            <div className="code-panel">{`export OPENAI_BASE_URL=https://ai-api-gateway.loi822004.workers.dev/v1\nexport OPENAI_API_KEY=apikeya_...\n\ncodex --model gpt-5.6-luna`}</div>
+            <div className="gateway-status">
+              <div>
+                <strong>Gateway connected</strong>
+                <div className="muted" style={{ fontSize: '12px' }}>Quota được theo dõi theo từng request</div>
               </div>
-            ))}
+              <span className="badge">6 model sẵn sàng</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="container provider-strip" aria-label="Nhà cung cấp hỗ trợ">
+          {providers.map(([name, family]) => (
+            <div className="provider-chip" key={name}>
+              <strong>{name}</strong>
+              <span>{family}</span>
+            </div>
+          ))}
+        </section>
+
+        <section id="pricing" className="container" style={{ padding: '34px 20px 88px' }}>
+          <div className="section-heading">
+            <div>
+              <h2 style={{ fontSize: '28px', letterSpacing: '-0.03em' }}>Bảng giá model</h2>
+              <p className="muted" style={{ marginTop: '6px' }}>Giá niêm yết để so sánh nhanh, tính theo lượng token sử dụng thực tế.</p>
+            </div>
+            <Link href="/docs" className="btn secondary">Xem cách tích hợp</Link>
+          </div>
+
+          <div className="pricing-shell">
+            <table className="pricing-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Phù hợp</th>
+                  <th>Giá</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {models.map((model) => (
+                  <tr key={model.name}>
+                    <td>
+                      <div className="model-name">
+                        <span className="model-dot" />
+                        <strong>{model.name}</strong>
+                      </div>
+                    </td>
+                    <td className="model-purpose">{model.purpose}</td>
+                    <td><strong>{model.price}</strong></td>
+                    <td style={{ textAlign: 'right' }}>
+                      <Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Dùng model →</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       </main>
 
-      <footer style={{ borderTop: '1px solid var(--line)', padding: '32px 0', marginTop: '64px' }}>
+      <footer style={{ borderTop: '1px solid var(--refresh-line)', padding: '28px 0 38px', background: '#fff' }}>
         <div className="container row">
-          <div className="brand">
-            <span>⚡</span>
-            <span>AI API</span>
+          <div className="landing-brand">
+            <span className="brand-mark">A</span>
+            <span>Apikeya</span>
           </div>
-          <p className="muted" style={{ fontSize: '13px' }}>
-            © 2026 AI API Reseller Gateway. Toàn quyền bảo lưu.
-          </p>
+          <p className="muted" style={{ fontSize: '13px' }}>API gateway · VNĐ-first · dành cho developer Việt Nam</p>
         </div>
       </footer>
     </>
