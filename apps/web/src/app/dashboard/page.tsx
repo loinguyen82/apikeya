@@ -1,17 +1,14 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
-import { formatVndFromMicros, formatNumber, formatVnd, formatCreditFromMicros, formatCarrotFromMicros } from '@/lib/money'
+import { formatNumber, formatVnd, formatCreditFromMicros, formatCarrotFromMicros } from '@/lib/money'
 import { getA6LiveBalance } from '@/lib/a6'
 import { isAdminUser } from '@/lib/admin'
 
 export default async function DashboardPage() {
   const { supabase, user } = await requireUser()
-
   const isAdmin = await isAdminUser(supabase, user)
 
   let a6Live: { usd: number; vnd: number } | null = null
-
-  // Admin chỉ xem số dư live của A6; số dư ví ứng dụng vẫn do ledger quyết toán.
   if (isAdmin) {
     try {
       a6Live = await getA6LiveBalance()
@@ -31,157 +28,125 @@ export default async function DashboardPage() {
       .limit(5),
   ])
 
-  const displayBalance = isAdmin && a6Live ? formatVnd(a6Live.vnd) : formatCreditFromMicros(wallet?.available_micros ?? '0')
+  const displayBalance = isAdmin && a6Live
+    ? formatVnd(a6Live.vnd)
+    : formatCreditFromMicros(wallet?.available_micros ?? '0')
+
+  const reservedBalance = formatCreditFromMicros(wallet?.reserved_micros ?? '0')
 
   return (
-    <div className="stack" style={{ gap: '28px' }}>
-      <div className="row">
+    <div className="stack" style={{ gap: '14px' }}>
+      <div className="dashboard-head">
         <div>
-          <h1>Developer overview</h1>
-          <p className="muted">
-            {isAdmin
-              ? 'Tài khoản Quản trị viên — Số dư tự động đồng bộ theo thời gian thực từ A6API.'
-              : 'Một key, một Base URL, mọi model bạn cần cho code agent và ứng dụng. 🥕 1 Credit = 1.000đ.'}
+          <h1>Overview</h1>
+          <p className="muted" style={{ marginTop: '6px' }}>
+            Theo dõi số dư, request và trạng thái sử dụng của tài khoản.
           </p>
         </div>
-        <div className="row" style={{ gap: '10px' }}>
-          <Link href="/dashboard/playground" className="btn secondary">
-            Mở Playground →
-          </Link>
-          {!isAdmin && (
-            <Link href="/dashboard/billing" className="btn">
-              Nạp quota
-            </Link>
-          )}
+        <div className="dashboard-actions">
+          <Link href="/dashboard/playground" className="btn secondary">Mở Playground</Link>
+          {!isAdmin && <Link href="/dashboard/billing" className="btn">Nạp tiền</Link>}
         </div>
       </div>
 
-      <div className="kpis">
+      <div className="kpis refresh-kpis">
         <div className="card kpi">
-          <div className="row">
-            <span className="muted">🥕 Credit dùng được</span>
-            {isAdmin && (
-              <span
-                className="badge"
-                style={{
-                  background: 'rgba(99, 102, 241, 0.15)',
-                  color: 'var(--primary-hover)',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                }}
-              >
-                ⚡ Auto A6 Live
-              </span>
-            )}
-          </div>
-          <strong style={{ color: 'var(--primary-hover)', fontSize: '32px' }}>{displayBalance}</strong>
-          <div className="row" style={{ fontSize: '13px', marginTop: '4px' }}>
-            {isAdmin && a6Live ? (
-              <span style={{ color: 'var(--success)', fontWeight: 500 }}>
-                🪙 Gốc A6: ${a6Live.usd.toFixed(2)} USD (Tỷ giá 25.400đ/$)
-              </span>
-            ) : isAdmin ? (
-              <span className="muted">A6 live balance hiện chưa khả dụng.</span>
-            ) : (
-              <>
-                <span className="muted">Đang tạm giữ: {formatCreditFromMicros(wallet?.reserved_micros ?? '0')}</span>
-                <Link href="/dashboard/billing" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-                  Nạp thêm →
-                </Link>
-              </>
-            )}
-          </div>
+          <span className="metric-label">Số dư khả dụng</span>
+          <strong className="metric-value">{displayBalance}</strong>
+          <span className="metric-foot">
+            {isAdmin && a6Live ? `A6 live · $${a6Live.usd.toFixed(2)} USD` : 'Sẵn sàng dùng cho request mới'}
+          </span>
         </div>
 
         <div className="card kpi">
-          <span className="muted">Tổng lượt gọi API</span>
-          <strong>{formatNumber(requestCount ?? 0)}</strong>
-          <Link href="/dashboard/usage" className="muted" style={{ fontSize: '13px' }}>
-            Xem chi tiết chi tiêu →
-          </Link>
+          <span className="metric-label">Tổng request</span>
+          <strong className="metric-value">{formatNumber(requestCount ?? 0)}</strong>
+          <Link href="/dashboard/usage" className="metric-foot">Xem request logs →</Link>
         </div>
 
-        <div className="card kpi" style={{ justifyContent: 'center' }}>
-          <span className="muted">Bắt đầu trong 3 bước</span>
-          <div style={{ fontSize: '14px', lineHeight: 1.6, fontWeight: 500 }}>
-            <div>
-              1.{' '}
-              <Link href="/dashboard/playground" style={{ color: 'var(--primary)' }}>
-                Chọn model và chạy
-              </Link>
-            </div>
-            <div>
-              2.{' '}
-              <Link href="/docs" style={{ color: 'var(--primary)' }}>
-                Đổi Base URL
-              </Link>
-            </div>
-            <div>
-              3.{' '}
-              <Link href="/dashboard/api-keys" style={{ color: 'var(--primary)' }}>
-                Tạo API key
-              </Link>
-            </div>
-          </div>
+        <div className="card kpi">
+          <span className="metric-label">Đang tạm giữ</span>
+          <strong className="metric-value">{reservedBalance}</strong>
+          <span className="metric-foot">Tự giải phóng khi request được quyết toán</span>
         </div>
       </div>
 
-      <div className="card stack">
-        <div className="row">
-          <h3>Recent usage</h3>
-          <Link href="/dashboard/usage" className="muted" style={{ fontSize: '13px' }}>
-            Xem tất cả →
-          </Link>
-        </div>
+      <div className="dashboard-grid">
+        <section className="card stack" style={{ gap: '16px' }}>
+          <div className="panel-head">
+            <div>
+              <h3>Recent requests</h3>
+              <p className="muted" style={{ fontSize: '12px', marginTop: '4px' }}>5 request gần nhất của tài khoản.</p>
+            </div>
+            <Link href="/dashboard/usage" className="btn secondary">Xem tất cả</Link>
+          </div>
 
-        {recentRequests && recentRequests.length > 0 ? (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Thời gian</th>
-                  <th>Mô hình</th>
-                  <th>Tổng Token</th>
-                  <th>Credit 🥕</th>
-                  <th>Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentRequests.map((r: any) => (
-                  <tr key={r.id}>
-                    <td>{new Date(r.created_at).toLocaleString('vi-VN')}</td>
-                    <td>
-                      <code>{r.model_id}</code>
-                    </td>
-                    <td>{formatNumber((r.input_tokens ?? 0) + (r.output_tokens ?? 0))}</td>
-                    <td style={{ fontWeight: 600 }}>{formatCarrotFromMicros(r.retail_cost_micros ?? '0')}</td>
-                    <td>
-                      <span
-                        className="badge"
-                        style={{
-                          background: r.status === 'settled' ? 'var(--success-bg)' : 'var(--primary-light)',
-                          color: r.status === 'settled' ? 'var(--success)' : '#60a5fa',
-                          borderColor: r.status === 'settled' ? 'rgba(16,185,129,0.3)' : 'rgba(96,165,250,0.3)',
-                        }}
-                      >
-                        {r.status === 'settled' ? 'Thành công' : r.status}
-                      </span>
-                    </td>
+          {recentRequests && recentRequests.length > 0 ? (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Model</th>
+                    <th>Token</th>
+                    <th>Chi phí</th>
+                    <th>Trạng thái</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recentRequests.map((request: any) => (
+                    <tr key={request.id}>
+                      <td>{new Date(request.created_at).toLocaleString('vi-VN')}</td>
+                      <td><code>{request.model_id}</code></td>
+                      <td>{formatNumber((request.input_tokens ?? 0) + (request.output_tokens ?? 0))}</td>
+                      <td><strong>{formatCarrotFromMicros(request.retail_cost_micros ?? '0')}</strong></td>
+                      <td>
+                        <span className="badge">
+                          {request.status === 'settled' ? 'Thành công' : request.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Chưa có request nào</strong>
+              <span className="muted">Chạy thử một model để request đầu tiên xuất hiện ở đây.</span>
+              <Link href="/dashboard/playground" className="btn" style={{ marginTop: '8px' }}>Gửi request đầu tiên</Link>
+            </div>
+          )}
+        </section>
+
+        <aside className="card stack" style={{ gap: '18px' }}>
+          <div>
+            <h3>Bắt đầu nhanh</h3>
+            <p className="muted" style={{ marginTop: '4px' }}>Từ tài khoản mới đến request đầu tiên.</p>
           </div>
-        ) : (
-          <div className="muted" style={{ padding: '24px 0', textAlign: 'center' }}>
-            Bạn chưa có lượt sử dụng nào. Hãy vào trang{' '}
-            <Link href="/dashboard/playground" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-              Dùng thử
-            </Link>{' '}
-            để trải nghiệm!
+
+          <div className="stack" style={{ gap: '14px' }}>
+            <div>
+              <strong style={{ fontSize: '14px' }}>01 · Chọn model</strong>
+              <p className="muted" style={{ fontSize: '12px' }}>Test trực tiếp trong Playground trước khi tích hợp.</p>
+            </div>
+            <div>
+              <strong style={{ fontSize: '14px' }}>02 · Tạo API key</strong>
+              <p className="muted" style={{ fontSize: '12px' }}>Một key dùng cho toàn bộ model đang khả dụng.</p>
+            </div>
+            <div>
+              <strong style={{ fontSize: '14px' }}>03 · Đổi Base URL</strong>
+              <p className="muted" style={{ fontSize: '12px' }}>Giữ nguyên SDK, chỉ đổi endpoint sang Apikeya.</p>
+            </div>
           </div>
-        )}
+
+          <div className="code-panel">{`OPENAI_BASE_URL=…/v1\nOPENAI_API_KEY=apikeya_...`}</div>
+
+          <div className="row" style={{ justifyContent: 'flex-start', gap: '8px' }}>
+            <Link href="/dashboard/api-keys" className="btn">Tạo API key</Link>
+            <Link href="/docs" className="btn secondary">Xem docs</Link>
+          </div>
+        </aside>
       </div>
     </div>
   )
