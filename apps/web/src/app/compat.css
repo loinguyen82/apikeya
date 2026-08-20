@@ -1,0 +1,28 @@
+:root{
+  --bg:#f7faf9;
+  --bg-subtle:#f4f8f6;
+  --surface:#ffffff;
+  --surface-hover:#fbfdfc;
+  --line:#e4ece9;
+  --line-strong:#d5e1dd;
+  --text-main:#0f1720;
+  --text-muted:#66737d;
+  --text-dim:#82908a;
+  --primary:#0aa986;
+  --primary-hover:#078f73;
+  --primary-light:#e9f8f3;
+  --success:#0a8f70;
+  --success-bg:#edf9f5;
+  --warning:#a56f00;
+  --warning-bg:#fff8e8;
+  --danger:#dc4c4c;
+  --danger-bg:#fff1f1;
+}
+
+/* Legacy components still using original utility classes inherit the new visual language. */
+.card[style*="background: var(--bg-subtle)"],
+.empty-state,
+.chat,
+pre[style*="var(--bg-subtle)"]{background:#f7faf9!important}
+
+code{color:#285a4e}
