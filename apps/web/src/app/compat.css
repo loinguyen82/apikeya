@@ -26,3 +26,5 @@
 pre[style*="var(--bg-subtle)"]{background:#f7faf9!important}
 
 code{color:#285a4e}
+
+/* Final compatibility layer for the 2026 light SaaS refresh. */
