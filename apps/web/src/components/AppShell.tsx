@@ -6,12 +6,12 @@ import { usePathname } from 'next/navigation'
 
 const nav = [
   ['/dashboard', 'Overview'],
-  ['/dashboard/models', 'Model available'],
-  ['/docs', '⚙️ Cấu hình sẵn'],
-  ['/dashboard/playground', 'Test model'],
+  ['/dashboard/models', 'Models'],
+  ['/dashboard/playground', 'Playground'],
   ['/dashboard/usage', 'Request logs'],
-  ['/dashboard/api-keys', 'API key'],
-  ['/dashboard/billing', '🥕 Nạp quota'],
+  ['/dashboard/api-keys', 'API keys'],
+  ['/dashboard/billing', 'Billing'],
+  ['/docs', 'Docs'],
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -22,16 +22,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="console-header">
         <div className="console-header-inner">
           <Link href="/dashboard" className="console-brand">
-            <span className="console-mark">V</span>
+            <span className="console-mark">A</span>
             <span>
-              <strong>AI API</strong>
+              <strong>Apikeya</strong>
               <small>Developer Console</small>
             </span>
           </Link>
 
           <div className="console-actions">
-            <Link href="/docs" className="console-action-link">Docs</Link>
-            <Link href="/admin" className="console-action-link">🛡️ Admin</Link>
+            <Link href="/admin" className="console-action-link">Admin</Link>
             <form action="/auth/signout" method="post">
               <button type="submit" className="console-logout">Đăng xuất</button>
             </form>
@@ -49,17 +48,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
       </header>
+
       <main className="main">{children}</main>
+
       <footer className="console-footer">
         <div>
-          <strong>AI API Developer Console</strong>
-          <span>Quota, model, test request và logs trong 24 giờ.</span>
+          <strong>Apikeya Developer Console</strong>
+          <span>Models, API keys, billing và request history trong một nơi.</span>
         </div>
         <div className="console-footer-links">
-          <span>Chính sách</span>
           <Link href="/docs">Tài liệu</Link>
           <Link href="/dashboard/billing">Thanh toán</Link>
-          <Link href="/dashboard/usage">Lịch sử request</Link>
+          <Link href="/dashboard/usage">Request logs</Link>
         </div>
       </footer>
     </div>
