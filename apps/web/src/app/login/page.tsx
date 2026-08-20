@@ -2,27 +2,18 @@ import Link from 'next/link'
 import { LoginForm } from '@/components/AuthForms'
 
 export default function LoginPage() {
-  return (
-    <main className="container" style={{ maxWidth: 440, paddingTop: 80, paddingBottom: 80 }}>
-      <div className="card stack">
-        <div className="stack" style={{ gap: '6px' }}>
-          <div className="brand" style={{ marginBottom: '8px' }}>
-            <span>⚡</span>
-            <span>AI API</span>
-          </div>
-          <h1>Đăng nhập</h1>
-          <p className="muted">Truy cập bảng điều khiển để dùng thử, nạp tiền và tạo API key.</p>
-        </div>
-
-        <LoginForm />
-
-        <div className="row" style={{ justifyContent: 'center', fontSize: '14px', marginTop: '8px' }}>
-          <span className="muted">Chưa có tài khoản?</span>
-          <Link href="/signup" style={{ color: 'var(--primary)', fontWeight: 600 }}>
-            Tạo tài khoản mới
-          </Link>
-        </div>
-      </div>
-    </main>
-  )
+  return <main className="auth-page">
+    <section className="auth-aside">
+      <Link href="/" className="landing-brand"><span className="brand-mark">A</span><span>Apikeya</span></Link>
+      <h1>Một API key cho nhiều model.</h1>
+      <p>Quản lý model, request, số dư và khóa truy cập trong một developer console gọn nhẹ.</p>
+      <div className="auth-benefits"><div className="auth-benefit">OpenAI-compatible cho SDK và code agent</div><div className="auth-benefit">Thanh toán VNĐ qua VietQR</div><div className="auth-benefit">Theo dõi chi phí theo từng request</div></div>
+    </section>
+    <section className="auth-panel"><div className="auth-card">
+      <Link href="/" className="auth-brand"><span className="brand-mark">A</span>Apikeya</Link>
+      <h2 className="auth-title">Đăng nhập</h2><p className="auth-subtitle">Tiếp tục vào developer console.</p>
+      <LoginForm />
+      <div className="auth-foot">Chưa có tài khoản? <Link href="/signup">Tạo tài khoản</Link></div>
+    </div></section>
+  </main>
 }
