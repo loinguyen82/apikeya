@@ -1,9 +1,10 @@
 import './globals.css'
+import './refresh.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'AI API — Nền tảng AI Gateway & Reseller cho Việt Nam',
-  description: 'Một cổng API duy nhất kết nối nhiều mô hình AI hàng đầu (Claude, GPT, Kimi). Thanh toán thuận tiện bằng VNĐ.',
+  title: 'Apikeya — Một API cho nhiều model AI',
+  description: 'Dùng Claude, GPT, Kimi và DeepSeek qua một Base URL. Thanh toán bằng VNĐ, theo dõi request và chi phí trong một developer console.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
