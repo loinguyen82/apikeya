@@ -1,9 +1,11 @@
 name: Cloudflare Flow Smoke
 
 on:
-  push:
-    branches:
-      - cloudflare-migration
+  workflow_run:
+    workflows:
+      - Deploy APIVN Web to Cloudflare
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -12,6 +14,7 @@ permissions:
 
 jobs:
   smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'cloudflare-migration') }}
     runs-on: ubuntu-latest
     steps:
       - name: Test public and auth flow edges
@@ -51,9 +54,6 @@ jobs:
           check_redirect '/dashboard/api-keys'
           check_redirect '/dashboard/playground'
 
-          # Well-formed but fake API key: this deliberately exercises the
-          # server-side Supabase runtime. Expected result is a clean 401,
-          # not a 500 caused by missing Cloudflare runtime secrets.
           code=$(curl -sS -o /tmp/login-body -w '%{http_code}' \
             -X POST "$BASE/api/auth/login" \
             -H "Origin: $BASE" \
@@ -63,7 +63,6 @@ jobs:
           echo "- POST /api/auth/login with fake valid-shape key: HTTP $code — $body" >> "$OUT"
           [ "$code" = '401' ] || failures=$((failures+1))
 
-          # Top-up must be inaccessible without a session.
           code=$(curl -sS -o /tmp/topup-body -w '%{http_code}' \
             -X POST "$BASE/api/topups" \
             -H "Origin: $BASE" \
