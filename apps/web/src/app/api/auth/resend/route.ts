@@ -1,6 +1,14 @@
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
+
+function createSignupClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' } },
+  )
+}
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -12,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (!normalizedEmail) return NextResponse.json({ error: 'Vui lòng nhập email' }, { status: 400 })
 
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
-    const supabase = await createServerSupabase()
+    const supabase = createSignupClient()
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email: normalizedEmail,

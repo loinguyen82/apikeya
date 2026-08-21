@@ -1,8 +1,17 @@
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { ensureUserAccount } from '@/lib/bootstrap-user'
 import { rejectCrossSiteMutation } from '@/lib/security'
+
+function createSignupClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' } },
+  )
+}
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -21,8 +30,8 @@ export async function POST(req: NextRequest) {
     }
 
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
-    const supabase = await createServerSupabase()
-    const { data, error } = await supabase.auth.signUp({
+    const signupClient = createSignupClient()
+    const { data, error } = await signupClient.auth.signUp({
       email: normalizedEmail,
       password,
       options: {
@@ -43,10 +52,14 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({
-      ok: true,
-      requiresConfirmation: !data.session,
-    })
+    // Nếu project tắt email confirmation (dev/local), tạo cookie session bằng SSR client.
+    if (data.session) {
+      const serverClient = await createServerSupabase()
+      const { error: loginError } = await serverClient.auth.signInWithPassword({ email: normalizedEmail, password })
+      if (!loginError) return NextResponse.json({ ok: true, requiresConfirmation: false })
+    }
+
+    return NextResponse.json({ ok: true, requiresConfirmation: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 })
   }
