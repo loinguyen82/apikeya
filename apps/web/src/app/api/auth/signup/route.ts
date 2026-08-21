@@ -42,18 +42,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message || 'Không thể tạo tài khoản' }, { status: 400 })
     }
 
-    // Profile + wallet are created only by the auth.users database trigger.
-    // Do not bootstrap data.user here: repeated signup intentionally returns a
-    // non-enumerating response and must not be treated as a newly-created user.
+    // signUp intentionally obscures whether an account already exists. Try the
+    // supplied credentials once: if they are valid for a confirmed account,
+    // create the normal SSR cookie session and continue. Otherwise return one
+    // generic pending state so the UI never falsely claims that an email was sent.
+    const serverClient = await createServerSupabase()
+    const { error: loginError } = await serverClient.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    })
 
-    // Nếu project tắt email confirmation (dev/local), tạo cookie session bằng SSR client.
-    if (data.session) {
-      const serverClient = await createServerSupabase()
-      const { error: loginError } = await serverClient.auth.signInWithPassword({ email: normalizedEmail, password })
-      if (!loginError) return NextResponse.json({ ok: true, requiresConfirmation: false })
+    if (!loginError) {
+      return NextResponse.json({ ok: true, requiresConfirmation: false })
     }
 
-    return NextResponse.json({ ok: true, requiresConfirmation: true })
+    // Profile + wallet are created only by the auth.users database trigger.
+    // Do not bootstrap data.user here: repeated signup responses are intentionally
+    // non-enumerating and must not be treated as newly-created users.
+    return NextResponse.json({
+      ok: true,
+      requiresConfirmation: true,
+      confirmationState: 'pending_or_existing',
+    })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 })
   }
