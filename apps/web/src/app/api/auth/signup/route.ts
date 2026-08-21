@@ -1,15 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
-
-function createSignupClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' } },
-  )
-}
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -19,51 +11,52 @@ export async function POST(req: NextRequest) {
     const { email, password, displayName } = await req.json()
     const normalizedEmail = String(email || '').trim().toLowerCase()
     const normalizedName = String(displayName || '').trim()
+    const normalizedPassword = String(password || '')
 
-    if (!normalizedEmail || !password) {
+    if (!normalizedEmail || !normalizedPassword) {
       return NextResponse.json({ error: 'Vui lòng nhập đầy đủ email và mật khẩu' }, { status: 400 })
     }
-    if (String(password).length < 8) {
+    if (normalizedPassword.length < 8) {
       return NextResponse.json({ error: 'Mật khẩu phải có tối thiểu 8 ký tự' }, { status: 400 })
     }
 
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
-    const signupClient = createSignupClient()
-    const { data, error } = await signupClient.auth.signUp({
+    const admin = createAdminSupabase()
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
       email: normalizedEmail,
-      password,
-      options: {
-        data: { display_name: normalizedName || normalizedEmail.split('@')[0] },
-        emailRedirectTo: `${appUrl}/login?verified=1`,
-      },
+      password: normalizedPassword,
+      email_confirm: true,
+      user_metadata: { display_name: normalizedName || normalizedEmail.split('@')[0] },
     })
 
-    if (error) {
-      return NextResponse.json({ error: error.message || 'Không thể tạo tài khoản' }, { status: 400 })
+    if (createError || !created.user) {
+      // Existing accounts keep a temporary recovery path. No confirmation email
+      // is sent or required in the API-key-first customer flow.
+      const existingClient = await createServerSupabase()
+      const { error: existingLoginError } = await existingClient.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: normalizedPassword,
+      })
+      if (!existingLoginError) {
+        return NextResponse.json({ ok: true, existing: true })
+      }
+
+      return NextResponse.json({
+        error: 'Email này đã có tài khoản. Hãy đăng nhập bằng API key hoặc dùng đăng nhập cũ.',
+      }, { status: 409 })
     }
 
-    // signUp intentionally obscures whether an account already exists. Try the
-    // supplied credentials once: if they are valid for a confirmed account,
-    // create the normal SSR cookie session and continue. Otherwise return one
-    // generic pending state so the UI never falsely claims that an email was sent.
+    // auth.users trigger creates profile + wallet synchronously. Open a temporary
+    // recovery session so a new customer can pay before receiving their API key.
     const serverClient = await createServerSupabase()
     const { error: loginError } = await serverClient.auth.signInWithPassword({
       email: normalizedEmail,
-      password,
+      password: normalizedPassword,
     })
-
-    if (!loginError) {
-      return NextResponse.json({ ok: true, requiresConfirmation: false })
+    if (loginError) {
+      return NextResponse.json({ error: 'Tài khoản đã tạo nhưng không thể mở phiên thanh toán' }, { status: 500 })
     }
 
-    // Profile + wallet are created only by the auth.users database trigger.
-    // Do not bootstrap data.user here: repeated signup responses are intentionally
-    // non-enumerating and must not be treated as newly-created users.
-    return NextResponse.json({
-      ok: true,
-      requiresConfirmation: true,
-      confirmationState: 'pending_or_existing',
-    })
+    return NextResponse.json({ ok: true, requiresTopup: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 })
   }
