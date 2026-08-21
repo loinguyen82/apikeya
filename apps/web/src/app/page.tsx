@@ -29,8 +29,8 @@ export default function HomePage() {
           <div className="row" style={{ gap: '10px' }}>
             <a href="#pricing" className="btn secondary" style={{ border: 'none' }}>Bảng giá</a>
             <Link href="/docs" className="btn secondary" style={{ border: 'none' }}>Tài liệu</Link>
-            <Link href="/login" className="btn secondary">Đăng nhập</Link>
-            <Link href="/signup" className="btn">Tạo tài khoản</Link>
+            <Link href="/login" className="btn secondary">Đăng nhập bằng key</Link>
+            <Link href="/signup" className="btn">Nhận API key</Link>
           </div>
         </div>
       </header>
@@ -39,21 +39,21 @@ export default function HomePage() {
         <section className="container hero-refresh">
           <div className="hero-copy">
             <div className="hero-eyebrow">API gateway cho developer Việt Nam</div>
-            <h1>Một API cho nhiều model. Trả đúng theo lượng dùng.</h1>
+            <h1>Một API cho nhiều model. Một key cho cả API và Dashboard.</h1>
             <p className="muted">
-              Dùng Claude, GPT, Kimi và DeepSeek qua một Base URL. Nạp bằng VNĐ, test model trước khi tích hợp,
-              rồi theo dõi từng request và chi phí trong một console duy nhất.
+              Nhận API key ngay, nạp bằng VNĐ rồi dùng Claude, GPT, Kimi và DeepSeek qua một Base URL.
+              Không cần chờ email xác minh; số dư và quota luôn gắn với wallet của bạn.
             </p>
 
             <div className="hero-actions">
-              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Tạo tài khoản</Link>
+              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Nhận API key</Link>
               <a href="#pricing" className="btn secondary" style={{ padding: '12px 20px' }}>Xem bảng giá</a>
             </div>
 
             <div className="hero-proof" aria-label="Điểm nổi bật">
               <span>Nạp từ 20.000đ</span>
-              <span>1 Credit = 1.000đ</span>
-              <span>Chi phí theo request</span>
+              <span>0 Credit miễn phí</span>
+              <span>1 user · 1 key active</span>
               <span>OpenAI-compatible</span>
             </div>
           </div>
@@ -66,8 +66,8 @@ export default function HomePage() {
             <div className="code-panel">{`export OPENAI_BASE_URL=https://ai-api-gateway.loi822004.workers.dev/v1\nexport OPENAI_API_KEY=sk-...\n\ncodex --model gpt-5.6-luna`}</div>
             <div className="gateway-status">
               <div>
-                <strong>Chỉ đổi Base URL và key</strong>
-                <div className="muted" style={{ fontSize: '12px' }}>Giữ nguyên SDK và workflow đang dùng</div>
+                <strong>Key cũng là credential Dashboard</strong>
+                <div className="muted" style={{ fontSize: '12px' }}>Rotate key không reset số dư hay quota</div>
               </div>
               <span className="badge">6 model đã cấu hình</span>
             </div>
@@ -114,7 +114,7 @@ export default function HomePage() {
                     <td className="model-purpose">{model.purpose}</td>
                     <td><strong>{model.price}</strong><div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{model.credit}</div></td>
                     <td style={{ textAlign: 'right' }}>
-                      <Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Bắt đầu →</Link>
+                      <Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Nhận key →</Link>
                     </td>
                   </tr>
                 ))}

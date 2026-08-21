@@ -1,15 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
-
-function createSignupClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' } },
-  )
-}
+import { generateApiKey, sha256Hex } from '@/lib/api-keys'
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -19,50 +12,68 @@ export async function POST(req: NextRequest) {
     const { email, password, displayName } = await req.json()
     const normalizedEmail = String(email || '').trim().toLowerCase()
     const normalizedName = String(displayName || '').trim()
+    const normalizedPassword = String(password || '')
 
-    if (!normalizedEmail || !password) {
+    if (!normalizedEmail || !normalizedPassword) {
       return NextResponse.json({ error: 'Vui lòng nhập đầy đủ email và mật khẩu' }, { status: 400 })
     }
-    if (String(password).length < 8) {
+    if (normalizedPassword.length < 8) {
       return NextResponse.json({ error: 'Mật khẩu phải có tối thiểu 8 ký tự' }, { status: 400 })
     }
 
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
-    const signupClient = createSignupClient()
-    const { data, error } = await signupClient.auth.signUp({
+    const admin = createAdminSupabase()
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
       email: normalizedEmail,
-      password,
-      options: {
-        data: { display_name: normalizedName || normalizedEmail.split('@')[0] },
-        emailRedirectTo: `${appUrl}/login?verified=1`,
-      },
+      password: normalizedPassword,
+      email_confirm: true,
+      user_metadata: { display_name: normalizedName || normalizedEmail.split('@')[0] },
     })
 
-    if (error) {
-      return NextResponse.json({ error: error.message || 'Không thể tạo tài khoản' }, { status: 400 })
+    if (createError || !created.user) {
+      // Existing accounts can still use the migration fallback once to enter the
+      // dashboard and rotate/save their API key. Do not send confirmation email.
+      const existingClient = await createServerSupabase()
+      const { error: existingLoginError } = await existingClient.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: normalizedPassword,
+      })
+      if (!existingLoginError) {
+        return NextResponse.json({ ok: true, existing: true, keyCreated: false })
+      }
+
+      return NextResponse.json({
+        error: 'Email này đã có tài khoản. Hãy đăng nhập bằng API key hoặc dùng đăng nhập cũ.',
+      }, { status: 409 })
     }
 
-    // signUp intentionally obscures whether an account already exists. Try the
-    // supplied credentials once: if they are valid for a confirmed account,
-    // create the normal SSR cookie session and continue. Otherwise return one
-    // generic pending state so the UI never falsely claims that an email was sent.
+    // Profile + wallet are created synchronously by the auth.users trigger.
     const serverClient = await createServerSupabase()
     const { error: loginError } = await serverClient.auth.signInWithPassword({
       email: normalizedEmail,
-      password,
+      password: normalizedPassword,
     })
-
-    if (!loginError) {
-      return NextResponse.json({ ok: true, requiresConfirmation: false })
+    if (loginError) {
+      return NextResponse.json({ error: 'Tài khoản đã tạo nhưng không thể mở phiên đăng nhập' }, { status: 500 })
     }
 
-    // Profile + wallet are created only by the auth.users database trigger.
-    // Do not bootstrap data.user here: repeated signup responses are intentionally
-    // non-enumerating and must not be treated as newly-created users.
+    const { plaintext, prefix } = generateApiKey()
+    const secretHash = await sha256Hex(plaintext)
+    const { error: keyError } = await admin.from('api_keys').insert({
+      user_id: created.user.id,
+      name: 'Default API Key',
+      prefix,
+      secret_hash: secretHash,
+      status: 'active',
+    })
+
+    if (keyError) {
+      return NextResponse.json({ ok: true, keyCreated: false })
+    }
+
     return NextResponse.json({
       ok: true,
-      requiresConfirmation: true,
-      confirmationState: 'pending_or_existing',
+      keyCreated: true,
+      plaintext,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 })

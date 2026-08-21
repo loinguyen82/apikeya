@@ -2,22 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
-
-async function sha256Hex(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-function generateKey(): { plaintext: string; prefix: string } {
-  const bytes = crypto.getRandomValues(new Uint8Array(24))
-  const token = btoa(String.fromCharCode(...bytes))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replaceAll('=', '')
-  const plaintext = `sk-${token}`
-  return { plaintext, prefix: plaintext.slice(0, 10) }
-}
+import { generateApiKey, sha256Hex } from '@/lib/api-keys'
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -48,8 +33,20 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminSupabase()
-  const { plaintext, prefix } = generateKey()
+  const { plaintext, prefix } = generateApiKey()
   const hash = await sha256Hex(plaintext)
+
+  // One user = one active credential. Rotating a key never creates a new wallet
+  // or quota bucket, so users cannot reset balance/quota by creating more keys.
+  const { error: revokeError } = await admin
+    .from('api_keys')
+    .update({ status: 'revoked' })
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+
+  if (revokeError) {
+    return NextResponse.json({ error: 'Không thể rotate API key hiện tại' }, { status: 500 })
+  }
 
   const { data, error } = await admin
     .from('api_keys')
@@ -69,6 +66,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    rotated: true,
     key: data,
     plaintext,
   })
