@@ -1,12 +1,6 @@
 name: Deploy APIVN Web to Cloudflare
 
 on:
-  push:
-    branches:
-      - cloudflare-migration
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -32,6 +26,9 @@ jobs:
       - name: Build OpenNext for Cloudflare
         run: npm run cf:build --workspace @aiapi/web
 
-      - name: Deploy temporary Cloudflare preview
+      - name: Deploy Worker
         working-directory: apps/web
-        run: npx wrangler deploy --temporary
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
