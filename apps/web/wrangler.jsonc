@@ -5,6 +5,12 @@
   "compatibility_date": "2026-08-21",
   "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
+  "routes": [
+    {
+      "pattern": "apivn.tech",
+      "custom_domain": true
+    }
+  ],
   "vars": {
     "NEXT_PUBLIC_SUPABASE_URL": "https://ycrqwekkafexqnlxpczd.supabase.co",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_5FgV9hFON8ZZFLc0WEcH7A_q-pUWbus"
