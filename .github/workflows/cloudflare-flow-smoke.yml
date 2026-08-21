@@ -1,11 +1,9 @@
 name: Cloudflare Flow Smoke
 
 on:
-  workflow_run:
-    workflows:
-      - Deploy APIVN Web to Cloudflare
-    types:
-      - completed
+  push:
+    branches:
+      - smoke-live
   workflow_dispatch:
 
 permissions:
@@ -14,7 +12,6 @@ permissions:
 
 jobs:
   smoke:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'cloudflare-migration') }}
     runs-on: ubuntu-latest
     steps:
       - name: Test public and auth flow edges
