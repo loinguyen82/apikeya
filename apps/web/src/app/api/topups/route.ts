@@ -108,6 +108,7 @@ export async function POST(req: NextRequest) {
         cancelUrl,
         expiredAt: Math.floor(expiresAt.getTime() / 1000),
       })
+      if (!payment.checkoutUrl) throw new Error('PAYOS_CHECKOUT_URL_MISSING')
       return NextResponse.redirect(payment.checkoutUrl, 303)
     } catch (paymentError) {
       await admin.from('topups').update({ status: 'cancelled' }).eq('id', data.id).eq('status', 'pending')
