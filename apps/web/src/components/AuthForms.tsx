@@ -63,18 +63,18 @@ export function SignupForm() {
     try {
       const res = await fetch('/api/auth/resend', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: email.trim().toLowerCase() }) })
       const json = await res.json()
-      if (!res.ok || json.error) setError(json.error || 'Không thể gửi lại email xác minh')
-      else setResendMessage('Đã gửi lại email xác minh.')
-    } catch { setError('Không thể gửi lại email xác minh') } finally { setResending(false) }
+      if (!res.ok || json.error) setError(json.error || 'Không thể xử lý yêu cầu gửi lại email xác minh')
+      else setResendMessage('Yêu cầu gửi lại đã được xử lý. Nếu email này đang chờ xác minh, hãy kiểm tra Inbox và Spam.')
+    } catch { setError('Không thể xử lý yêu cầu gửi lại email xác minh') } finally { setResending(false) }
   }
 
   if (confirmationSent) {
     return <div className="page-stack" style={{ gap: 14 }}>
-      <div className="notice success" role="status"><strong>Kiểm tra email của bạn.</strong><br />Apikeya đã gửi link xác minh tới <strong>{email.trim().toLowerCase()}</strong>. Sau khi xác minh, quay lại đăng nhập.</div>
+      <div className="notice success" role="status"><strong>Tiếp tục với email này.</strong><br />Nếu đây là tài khoản mới, hãy kiểm tra Inbox/Spam để tìm email xác minh từ Apikeya. Nếu bạn đã đăng ký trước đó, hãy chuyển sang đăng nhập.</div>
       {resendMessage && <div className="notice success" role="status">{resendMessage}</div>}
       {error && <div className="notice danger" role="alert">{error}</div>}
-      <button className="btn secondary" type="button" disabled={resending} onClick={resendConfirmation}>{resending ? 'Đang gửi…' : 'Gửi lại email xác minh'}</button>
-      <a className="btn" href="/login">Tới trang đăng nhập</a>
+      <button className="btn secondary" type="button" disabled={resending} onClick={resendConfirmation}>{resending ? 'Đang xử lý…' : 'Gửi lại email xác minh'}</button>
+      <a className="btn" href="/login">Đăng nhập</a>
     </div>
   }
 
