@@ -45,12 +45,12 @@ export default function HomePage() {
             </p>
 
             <div className="hero-actions">
-              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Bắt đầu từ 20.000đ</Link>
+              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Bắt đầu từ 1.000đ</Link>
               <a href="#pricing" className="btn secondary" style={{ padding: '12px 20px' }}>Xem bảng giá</a>
             </div>
 
             <div className="hero-proof" aria-label="Điểm nổi bật">
-              <span>Nạp từ 20.000đ</span>
+              <span>Nạp từ 1.000đ</span>
               <span>0 Credit miễn phí</span>
               <span>Nạp xong mới mở key</span>
               <span>1 user · 1 key active</span>
