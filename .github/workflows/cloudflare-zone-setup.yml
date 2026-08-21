@@ -6,6 +6,10 @@ on:
       - cloudflare-migration
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   setup-zone:
     runs-on: ubuntu-latest
@@ -14,40 +18,80 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          STATUS=/tmp/cf-zone-status.md
+          echo 'Cloudflare zone setup started.' > "$STATUS"
+          report() { gh issue comment 8 --repo loinguyen82/apikeya --body-file "$STATUS" >/dev/null 2>&1 || true; }
+          trap report EXIT
+
           API='https://api.cloudflare.com/client/v4'
           AUTH=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')
 
-          echo 'Looking up apivn.tech zone...'
-          LOOKUP=$(curl -fsS "${AUTH[@]}" "${API}/zones?name=apivn.tech&account.id=${CLOUDFLARE_ACCOUNT_ID}")
-          ZONE_ID=$(printf '%s' "$LOOKUP" | jq -r '.result[0].id // empty')
+          LOOKUP=$(curl -sS "${AUTH[@]}" "${API}/zones?name=apivn.tech&account.id=${CLOUDFLARE_ACCOUNT_ID}") || true
+          if [ "$(printf '%s' "$LOOKUP" | jq -r '.success // false')" != 'true' ]; then
+            {
+              echo 'FAILED: cannot read Cloudflare zones.'
+              printf '%s' "$LOOKUP" | jq -r '.errors[]? | "- code \(.code): \(.message)"'
+            } > "$STATUS"
+            exit 1
+          fi
 
+          ZONE_ID=$(printf '%s' "$LOOKUP" | jq -r '.result[0].id // empty')
           if [ -z "$ZONE_ID" ]; then
-            echo 'Zone not found; creating apivn.tech...'
-            CREATE=$(curl -fsS -X POST "${AUTH[@]}" "${API}/zones" \
-              --data "{\"name\":\"apivn.tech\",\"account\":{\"id\":\"${CLOUDFLARE_ACCOUNT_ID}\"},\"type\":\"full\"}")
-            ZONE_ID=$(printf '%s' "$CREATE" | jq -r '.result.id // empty')
-            if [ -z "$ZONE_ID" ]; then
-              echo "$CREATE" | jq
+            CREATE=$(curl -sS -X POST "${AUTH[@]}" "${API}/zones" \
+              --data "{\"name\":\"apivn.tech\",\"account\":{\"id\":\"${CLOUDFLARE_ACCOUNT_ID}\"},\"type\":\"full\"}") || true
+            if [ "$(printf '%s' "$CREATE" | jq -r '.success // false')" != 'true' ]; then
+              {
+                echo 'FAILED: Cloudflare account can be read, but apivn.tech cannot be added.'
+                printf '%s' "$CREATE" | jq -r '.errors[]? | "- code \(.code): \(.message)"'
+              } > "$STATUS"
               exit 1
             fi
+            ZONE_ID=$(printf '%s' "$CREATE" | jq -r '.result.id')
           fi
 
-          ZONE=$(curl -fsS "${AUTH[@]}" "${API}/zones/${ZONE_ID}")
-          echo "Zone status: $(printf '%s' "$ZONE" | jq -r '.result.status')"
-          echo 'Cloudflare nameservers:'
-          printf '%s' "$ZONE" | jq -r '.result.name_servers[]?'
+          ZONE=$(curl -sS "${AUTH[@]}" "${API}/zones/${ZONE_ID}") || true
+          if [ "$(printf '%s' "$ZONE" | jq -r '.success // false')" != 'true' ]; then
+            echo 'FAILED: zone was found/created but could not be read.' > "$STATUS"
+            exit 1
+          fi
 
-          EXISTING=$(curl -fsS "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records?type=A&name=api.apivn.tech")
+          NS=$(printf '%s' "$ZONE" | jq -r '.result.name_servers[]?' | paste -sd ', ' -)
+          ZONE_STATUS=$(printf '%s' "$ZONE" | jq -r '.result.status')
+
+          EXISTING=$(curl -sS "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records?type=A&name=api.apivn.tech") || true
+          if [ "$(printf '%s' "$EXISTING" | jq -r '.success // false')" != 'true' ]; then
+            {
+              echo "PARTIAL: zone exists (status: ${ZONE_STATUS}), but token cannot manage DNS records."
+              echo "Nameservers: ${NS}"
+              printf '%s' "$EXISTING" | jq -r '.errors[]? | "- code \(.code): \(.message)"'
+            } > "$STATUS"
+            exit 1
+          fi
+
           RECORD_ID=$(printf '%s' "$EXISTING" | jq -r '.result[0].id // empty')
           BODY='{"type":"A","name":"api","content":"70.36.125.65","ttl":300,"proxied":false}'
-
           if [ -n "$RECORD_ID" ]; then
-            curl -fsS -X PUT "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records/${RECORD_ID}" --data "$BODY" >/dev/null
-            echo 'Updated api.apivn.tech -> 70.36.125.65 (DNS only)'
+            DNS_RESULT=$(curl -sS -X PUT "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records/${RECORD_ID}" --data "$BODY") || true
           else
-            curl -fsS -X POST "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records" --data "$BODY" >/dev/null
-            echo 'Created api.apivn.tech -> 70.36.125.65 (DNS only)'
+            DNS_RESULT=$(curl -sS -X POST "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records" --data "$BODY") || true
           fi
+
+          if [ "$(printf '%s' "$DNS_RESULT" | jq -r '.success // false')" != 'true' ]; then
+            {
+              echo "PARTIAL: zone exists (status: ${ZONE_STATUS}), but api.apivn.tech DNS could not be written."
+              echo "Nameservers: ${NS}"
+              printf '%s' "$DNS_RESULT" | jq -r '.errors[]? | "- code \(.code): \(.message)"'
+            } > "$STATUS"
+            exit 1
+          fi
+
+          {
+            echo 'SUCCESS: apivn.tech Cloudflare zone is ready.'
+            echo "Zone status: ${ZONE_STATUS}"
+            echo "Nameservers: ${NS}"
+            echo 'DNS: api.apivn.tech -> 70.36.125.65 (DNS only)'
+          } > "$STATUS"
