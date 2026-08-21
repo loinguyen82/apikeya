@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
-import { generateApiKey, sha256Hex } from '@/lib/api-keys'
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -30,15 +29,15 @@ export async function POST(req: NextRequest) {
     })
 
     if (createError || !created.user) {
-      // Existing accounts can still use the migration fallback once to enter the
-      // dashboard and rotate/save their API key. Do not send confirmation email.
+      // Existing accounts keep a temporary recovery path. No confirmation email
+      // is sent or required in the API-key-first customer flow.
       const existingClient = await createServerSupabase()
       const { error: existingLoginError } = await existingClient.auth.signInWithPassword({
         email: normalizedEmail,
         password: normalizedPassword,
       })
       if (!existingLoginError) {
-        return NextResponse.json({ ok: true, existing: true, keyCreated: false })
+        return NextResponse.json({ ok: true, existing: true })
       }
 
       return NextResponse.json({
@@ -46,35 +45,18 @@ export async function POST(req: NextRequest) {
       }, { status: 409 })
     }
 
-    // Profile + wallet are created synchronously by the auth.users trigger.
+    // auth.users trigger creates profile + wallet synchronously. Open a temporary
+    // recovery session so a new customer can pay before receiving their API key.
     const serverClient = await createServerSupabase()
     const { error: loginError } = await serverClient.auth.signInWithPassword({
       email: normalizedEmail,
       password: normalizedPassword,
     })
     if (loginError) {
-      return NextResponse.json({ error: 'Tài khoản đã tạo nhưng không thể mở phiên đăng nhập' }, { status: 500 })
+      return NextResponse.json({ error: 'Tài khoản đã tạo nhưng không thể mở phiên thanh toán' }, { status: 500 })
     }
 
-    const { plaintext, prefix } = generateApiKey()
-    const secretHash = await sha256Hex(plaintext)
-    const { error: keyError } = await admin.from('api_keys').insert({
-      user_id: created.user.id,
-      name: 'Default API Key',
-      prefix,
-      secret_hash: secretHash,
-      status: 'active',
-    })
-
-    if (keyError) {
-      return NextResponse.json({ ok: true, keyCreated: false })
-    }
-
-    return NextResponse.json({
-      ok: true,
-      keyCreated: true,
-      plaintext,
-    })
+    return NextResponse.json({ ok: true, requiresTopup: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 })
   }

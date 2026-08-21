@@ -30,7 +30,7 @@ export default function HomePage() {
             <a href="#pricing" className="btn secondary" style={{ border: 'none' }}>Bảng giá</a>
             <Link href="/docs" className="btn secondary" style={{ border: 'none' }}>Tài liệu</Link>
             <Link href="/login" className="btn secondary">Đăng nhập bằng key</Link>
-            <Link href="/signup" className="btn">Nhận API key</Link>
+            <Link href="/signup" className="btn">Bắt đầu</Link>
           </div>
         </div>
       </header>
@@ -41,20 +41,19 @@ export default function HomePage() {
             <div className="hero-eyebrow">API gateway cho developer Việt Nam</div>
             <h1>Một API cho nhiều model. Một key cho cả API và Dashboard.</h1>
             <p className="muted">
-              Nhận API key ngay, nạp bằng VNĐ rồi dùng Claude, GPT, Kimi và DeepSeek qua một Base URL.
-              Không cần chờ email xác minh; số dư và quota luôn gắn với wallet của bạn.
+              Tạo tài khoản không cần xác minh email, nạp bằng VNĐ rồi nhận API key. Sau đó dùng Claude, GPT, Kimi và DeepSeek qua một Base URL và đăng nhập Dashboard bằng chính key đó.
             </p>
 
             <div className="hero-actions">
-              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Nhận API key</Link>
+              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Bắt đầu từ 20.000đ</Link>
               <a href="#pricing" className="btn secondary" style={{ padding: '12px 20px' }}>Xem bảng giá</a>
             </div>
 
             <div className="hero-proof" aria-label="Điểm nổi bật">
               <span>Nạp từ 20.000đ</span>
               <span>0 Credit miễn phí</span>
+              <span>Nạp xong mới mở key</span>
               <span>1 user · 1 key active</span>
-              <span>OpenAI-compatible</span>
             </div>
           </div>
 
@@ -94,28 +93,14 @@ export default function HomePage() {
 
           <div className="pricing-shell">
             <table className="pricing-table">
-              <thead>
-                <tr>
-                  <th>Model</th>
-                  <th>Phù hợp</th>
-                  <th>Giá / 1M token</th>
-                  <th></th>
-                </tr>
-              </thead>
+              <thead><tr><th>Model</th><th>Phù hợp</th><th>Giá / 1M token</th><th></th></tr></thead>
               <tbody>
                 {models.map((model) => (
                   <tr key={model.name}>
-                    <td>
-                      <div className="model-name">
-                        <span className="model-dot" />
-                        <strong>{model.name}</strong>
-                      </div>
-                    </td>
+                    <td><div className="model-name"><span className="model-dot" /><strong>{model.name}</strong></div></td>
                     <td className="model-purpose">{model.purpose}</td>
                     <td><strong>{model.price}</strong><div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{model.credit}</div></td>
-                    <td style={{ textAlign: 'right' }}>
-                      <Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Nhận key →</Link>
-                    </td>
+                    <td style={{ textAlign: 'right' }}><Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Bắt đầu →</Link></td>
                   </tr>
                 ))}
               </tbody>
@@ -126,10 +111,7 @@ export default function HomePage() {
 
       <footer style={{ borderTop: '1px solid var(--refresh-line)', padding: '28px 0 38px', background: '#fff' }}>
         <div className="container row">
-          <div className="landing-brand">
-            <span className="brand-mark">A</span>
-            <span>Apikeya</span>
-          </div>
+          <div className="landing-brand"><span className="brand-mark">A</span><span>Apikeya</span></div>
           <p className="muted" style={{ fontSize: '13px' }}>API gateway · thanh toán VNĐ · dành cho developer Việt Nam</p>
         </div>
       </footer>
