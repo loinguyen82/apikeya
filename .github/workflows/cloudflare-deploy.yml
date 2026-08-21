@@ -1,6 +1,9 @@
 name: Deploy APIVN Web to Cloudflare
 
 on:
+  push:
+    branches:
+      - cloudflare-migration
   workflow_dispatch:
 
 jobs:
