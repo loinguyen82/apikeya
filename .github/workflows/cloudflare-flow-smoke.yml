@@ -49,6 +49,13 @@ jobs:
           check_get '/signup' '200'
           check_get '/login' '200'
           check_get '/docs' '200'
+
+          version_code=$(curl -sS -o /tmp/version-body -w '%{http_code}' "$BASE/api/version" || echo 000)
+          version_body=$(cat /tmp/version-body 2>/dev/null | head -c 300 | tr '\n' ' ')
+          echo "- GET /api/version: HTTP $version_code — $version_body" >> "$OUT"
+          [ "$version_code" = '200' ] || failures=$((failures+1))
+          echo "$version_body" | grep -q 'payos-1k-v1' || failures=$((failures+1))
+
           check_redirect '/dashboard'
           check_redirect '/dashboard/billing'
           check_redirect '/dashboard/api-keys'
@@ -67,7 +74,7 @@ jobs:
             -X POST "$BASE/api/topups" \
             -H "Origin: $BASE" \
             -H 'content-type: application/x-www-form-urlencoded' \
-            --data 'amount=20000' || echo 000)
+            --data 'amount=1000' || echo 000)
           body=$(cat /tmp/topup-body 2>/dev/null | head -c 300 | tr '\n' ' ')
           echo "- POST /api/topups unauthenticated: HTTP $code — $body" >> "$OUT"
           [ "$code" = '401' ] || failures=$((failures+1))
