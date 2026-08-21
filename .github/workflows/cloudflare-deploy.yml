@@ -13,6 +13,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://ycrqwekkafexqnlxpczd.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_5FgV9hFON8ZZFLc0WEcH7A_q-pUWbus
     steps:
       - name: Checkout
         uses: actions/checkout@v4
