@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
+import {
+  createPayOSOrderCode,
+  createPayOSPaymentLink,
+  isPayOSConfigured,
+} from '@/lib/payos'
 
-const allowedAmounts = new Set([20000, 50000, 100000, 200000, 500000, 1000000])
+const MIN_TOPUP_VND = 1000
+const TOPUP_STEP_VND = 1000
+const TOPUP_TTL_MS = 30 * 60 * 1000
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -21,8 +28,11 @@ export async function POST(req: NextRequest) {
   const form = await req.formData()
   const amount = Number(form.get('amount'))
 
-  if (!allowedAmounts.has(amount)) {
-    return NextResponse.json({ error: 'invalid_amount' }, { status: 400 })
+  if (!Number.isSafeInteger(amount) || amount < MIN_TOPUP_VND || amount % TOPUP_STEP_VND !== 0) {
+    return NextResponse.json(
+      { error: 'Số tiền nạp tối thiểu 1.000đ và phải theo bước 1.000đ', code: 'INVALID_AMOUNT' },
+      { status: 400 },
+    )
   }
 
   const { count: activePendingCount, error: pendingLookupError } = await client
@@ -56,16 +66,23 @@ export async function POST(req: NextRequest) {
     .eq('status', 'pending')
     .lte('expires_at', new Date().toISOString())
 
+  const topupId = crypto.randomUUID()
+  const expiresAt = new Date(Date.now() + TOPUP_TTL_MS)
+  const payosEnabled = isPayOSConfigured()
+  const orderCode = payosEnabled ? createPayOSOrderCode() : null
+
   const { data, error } = await admin
     .from('topups')
     .insert({
+      id: topupId,
       user_id: user.id,
       amount_micros: String(amount * 1000),
       bonus_micros: String(bonus * 1000),
       payable_vnd: amount,
-      payment_provider: 'manual_vietqr',
+      payment_provider: payosEnabled ? 'payos' : 'manual_vietqr',
+      external_id: orderCode ? String(orderCode) : null,
       status: 'pending',
-      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      expires_at: expiresAt.toISOString(),
     })
     .select('id')
     .single()
@@ -75,6 +92,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Bạn đang có một đơn nạp chưa hết hạn' }, { status: 409 })
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (payosEnabled && orderCode) {
+    const returnUrl = new URL(`/dashboard/billing?topup=${data.id}&payment=return`, req.url).toString()
+    const cancelUrl = new URL(`/dashboard/billing?topup=${data.id}&payment=cancelled`, req.url).toString()
+    const description = `APIVN${data.id.replace(/-/g, '').slice(0, 4).toUpperCase()}`
+
+    try {
+      const payment = await createPayOSPaymentLink({
+        orderCode,
+        amount,
+        description,
+        returnUrl,
+        cancelUrl,
+        expiredAt: Math.floor(expiresAt.getTime() / 1000),
+      })
+      return NextResponse.redirect(payment.checkoutUrl, 303)
+    } catch (paymentError) {
+      await admin.from('topups').update({ status: 'cancelled' }).eq('id', data.id).eq('status', 'pending')
+      console.error('payOS create payment failed', paymentError)
+      return NextResponse.json(
+        { error: 'Không thể tạo phiên thanh toán payOS. Vui lòng thử lại.', code: 'PAYOS_CREATE_FAILED' },
+        { status: 502 },
+      )
+    }
   }
 
   return NextResponse.redirect(new URL(`/dashboard/billing?topup=${data.id}`, req.url), 303)
