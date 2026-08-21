@@ -1,0 +1,47 @@
+name: Cloudflare Runtime Debug
+
+on:
+  push:
+    branches:
+      - smoke-live
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Tail Worker while probing failing routes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set +e
+          BASE='https://apivn-web.loi822004.workers.dev'
+          OUT=/tmp/apivn-runtime-debug.md
+          : > /tmp/tail.log
+          npx -y wrangler@4.125.0 tail apivn-web --format json > /tmp/tail.log 2>&1 &
+          TAIL_PID=$!
+          sleep 7
+          curl -sS "$BASE/dashboard/billing" -o /tmp/billing -w 'billing=%{http_code}\n'
+          curl -sS "$BASE/dashboard/api-keys" -o /tmp/keys -w 'keys=%{http_code}\n'
+          curl -sS -X POST "$BASE/api/topups" -H "Origin: $BASE" -H 'content-type: application/x-www-form-urlencoded' --data 'amount=20000' -o /tmp/topup -w 'topup=%{http_code}\n'
+          sleep 7
+          kill $TAIL_PID 2>/dev/null || true
+          wait $TAIL_PID 2>/dev/null || true
+          {
+            echo '## APIVN Cloudflare runtime debug'
+            echo
+            echo '```text'
+            tail -c 10000 /tmp/tail.log
+            echo
+            echo '```'
+          } > "$OUT"
+          gh issue comment 8 --repo loinguyen82/apikeya --body-file "$OUT" >/dev/null || true
+          cat "$OUT"
