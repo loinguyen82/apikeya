@@ -4,13 +4,10 @@ on:
   push:
     branches:
       - cloudflare-migration
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
-  group: apivn-cloudflare-web-${{ github.ref }}
+  group: apivn-cloudflare-web
   cancel-in-progress: true
 
 jobs:
