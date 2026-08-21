@@ -1,0 +1,6 @@
+[build]
+  command = "npm run build --workspace @aiapi/web"
+  publish = "apps/web/.next"
+
+[build.environment]
+  NODE_VERSION = "22"
