@@ -51,6 +51,7 @@ jobs:
             -H "Origin: $BASE" \
             -H 'content-type: application/x-www-form-urlencoded' \
             --data 'amount=1000')
+          topup_body=$(cat /tmp/topup 2>/dev/null | head -c 400 | tr '\n' ' ')
           topup_loc=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^location:[[:space:]]*/,""); gsub(/\r/,""); print}' /tmp/topup-h | tail -n1)
           [ "$topup" = '303' ] || failures=$((failures+1))
 
@@ -73,7 +74,7 @@ jobs:
             echo "- Signup + session: HTTP $signup"
             echo "- Billing after signup: HTTP $billing"
             echo "- Create first key before payment: HTTP $key_before — $key_body"
-            echo "- Create 1k topup: HTTP $topup → ${topup_loc:-no-location}"
+            echo "- Create 1k topup: HTTP $topup → ${topup_loc:-no-location} — $topup_body"
             echo "- Open generated topup page: HTTP $topup_page"
             echo
             if [ "$failures" -eq 0 ]; then
