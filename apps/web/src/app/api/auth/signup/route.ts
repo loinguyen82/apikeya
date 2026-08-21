@@ -3,6 +3,8 @@ import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
 
+const DUPLICATE_AUTH_CODES = new Set(['email_exists', 'user_already_exists'])
+
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
   if (originError) return originError
@@ -29,6 +31,26 @@ export async function POST(req: NextRequest) {
     })
 
     if (createError || !created.user) {
+      const code = createError?.code || ''
+
+      if (code === 'email_address_invalid') {
+        return NextResponse.json(
+          { error: 'Email không hợp lệ. Vui lòng dùng địa chỉ email thật.' },
+          { status: 400 },
+        )
+      }
+
+      if (!DUPLICATE_AUTH_CODES.has(code)) {
+        console.error('signup createUser failed', {
+          code: code || 'missing_user',
+          status: createError?.status,
+        })
+        return NextResponse.json(
+          { error: 'Không thể tạo tài khoản lúc này. Vui lòng thử lại sau.' },
+          { status: 503 },
+        )
+      }
+
       // Existing accounts keep a temporary recovery path. No confirmation email
       // is sent or required in the API-key-first customer flow.
       const existingClient = await createServerSupabase()
@@ -53,11 +75,16 @@ export async function POST(req: NextRequest) {
       password: normalizedPassword,
     })
     if (loginError) {
+      console.error('signup session bootstrap failed', {
+        code: loginError.code,
+        status: loginError.status,
+      })
       return NextResponse.json({ error: 'Tài khoản đã tạo nhưng không thể mở phiên thanh toán' }, { status: 500 })
     }
 
     return NextResponse.json({ ok: true, requiresTopup: true })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 })
+    console.error('signup route failed', err)
+    return NextResponse.json({ error: 'Lỗi hệ thống khi tạo tài khoản' }, { status: 500 })
   }
 }
