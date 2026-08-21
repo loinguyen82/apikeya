@@ -1,0 +1,87 @@
+name: Cloudflare Funnel E2E
+
+on:
+  push:
+    branches:
+      - smoke-live
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  funnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Exercise signup to topup-required funnel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set +e
+          BASE='https://apivn-web.loi822004.workers.dev'
+          EMAIL="apivn-e2e-$(date +%s)-${RANDOM}@example.test"
+          PASS="E2e-$(openssl rand -hex 16)"
+          JAR=/tmp/cookies.txt
+          OUT=/tmp/apivn-funnel-e2e.md
+          failures=0
+
+          signup=$(curl -sS -c "$JAR" -b "$JAR" -o /tmp/signup -w '%{http_code}' \
+            -X POST "$BASE/api/auth/signup" \
+            -H "Origin: $BASE" \
+            -H 'content-type: application/json' \
+            --data "{\"displayName\":\"APIVN E2E\",\"email\":\"$EMAIL\",\"password\":\"$PASS\"}")
+          [ "$signup" = '200' ] || failures=$((failures+1))
+
+          billing=$(curl -sS -c "$JAR" -b "$JAR" -o /tmp/billing -w '%{http_code}' "$BASE/dashboard/billing")
+          [ "$billing" = '200' ] || failures=$((failures+1))
+
+          key_before=$(curl -sS -c "$JAR" -b "$JAR" -o /tmp/key-before -w '%{http_code}' \
+            -X POST "$BASE/api/keys" \
+            -H "Origin: $BASE" \
+            -H 'content-type: application/json' \
+            --data '{"name":"E2E"}')
+          key_body=$(cat /tmp/key-before 2>/dev/null | head -c 300 | tr '\n' ' ')
+          [ "$key_before" = '402' ] || failures=$((failures+1))
+
+          topup=$(curl -sS -c "$JAR" -b "$JAR" -D /tmp/topup-h -o /tmp/topup -w '%{http_code}' \
+            -X POST "$BASE/api/topups" \
+            -H "Origin: $BASE" \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data 'amount=20000')
+          topup_loc=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^location:[[:space:]]*/,""); gsub(/\r/,""); print}' /tmp/topup-h | tail -n1)
+          [ "$topup" = '303' ] || failures=$((failures+1))
+
+          topup_page='skip'
+          if [ -n "$topup_loc" ]; then
+            case "$topup_loc" in
+              http*) topup_url="$topup_loc" ;;
+              *) topup_url="$BASE$topup_loc" ;;
+            esac
+            topup_page=$(curl -sS -c "$JAR" -b "$JAR" -o /tmp/topup-page -w '%{http_code}' "$topup_url")
+            [ "$topup_page" = '200' ] || failures=$((failures+1))
+          else
+            failures=$((failures+1))
+          fi
+
+          {
+            echo '## APIVN customer funnel E2E'
+            echo
+            echo "- Test account: $EMAIL"
+            echo "- Signup + session: HTTP $signup"
+            echo "- Billing after signup: HTTP $billing"
+            echo "- Create first key before payment: HTTP $key_before — $key_body"
+            echo "- Create 20k VietQR topup: HTTP $topup → ${topup_loc:-no-location}"
+            echo "- Open generated topup page: HTTP $topup_page"
+            echo
+            if [ "$failures" -eq 0 ]; then
+              echo '**RESULT: PASS — signup → billing → payment required → VietQR order works**'
+            else
+              echo "**RESULT: FAIL ($failures checks)**"
+            fi
+          } > "$OUT"
+          gh issue comment 8 --repo loinguyen82/apikeya --body-file "$OUT" >/dev/null || true
+          cat "$OUT"
+          [ "$failures" -eq 0 ]
