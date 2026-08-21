@@ -95,3 +95,5 @@ jobs:
             echo "Nameservers: ${NS}"
             echo 'DNS: api.apivn.tech -> 70.36.125.65 (DNS only)'
           } > "$STATUS"
+
+# rerun after zone permissions update
