@@ -1,12 +1,12 @@
 import Link from 'next/link'
 
 const models = [
-  { name: 'Kimi K2.6', price: '0,3 cr / 1M', purpose: 'Code, chat dài, automation' },
-  { name: 'DeepSeek V4', price: '0,8 cr / 1M', purpose: 'Reasoning và code tiết kiệm' },
-  { name: 'Claude Sonnet 5', price: '2,5 cr / 1M', purpose: 'Lập trình và phân tích sâu' },
-  { name: 'GPT-5.6 Terra', price: '3 cr / 1M', purpose: 'Đa năng, cân bằng' },
-  { name: 'GPT-5.6 Luna', price: '3,5 cr / 1M', purpose: 'Sáng tạo và lập kế hoạch' },
-  { name: 'GPT-5.6 Sol', price: '4 cr / 1M', purpose: 'Reasoning kỹ thuật khó' },
+  { name: 'Kimi K2.6', price: '150đ / 1M', credit: '0,15 Credit', purpose: 'Code, chat dài, automation' },
+  { name: 'DeepSeek V4', price: '300đ / 1M', credit: '0,3 Credit', purpose: 'Reasoning và code tiết kiệm' },
+  { name: 'GPT-5.6 Luna', price: '600đ / 1M', credit: '0,6 Credit', purpose: 'Sáng tạo, coding và tác vụ thường ngày' },
+  { name: 'Claude Sonnet 5', price: '750đ / 1M', credit: '0,75 Credit', purpose: 'Lập trình và phân tích sâu' },
+  { name: 'GPT-5.6 Terra', price: '1.500đ / 1M', credit: '1,5 Credit', purpose: 'Đa năng, cân bằng' },
+  { name: 'GPT-5.6 Sol', price: '2.500đ / 1M', credit: '2,5 Credit', purpose: 'Reasoning kỹ thuật khó' },
 ]
 
 const providers = [
@@ -30,7 +30,7 @@ export default function HomePage() {
             <a href="#pricing" className="btn secondary" style={{ border: 'none' }}>Bảng giá</a>
             <Link href="/docs" className="btn secondary" style={{ border: 'none' }}>Tài liệu</Link>
             <Link href="/login" className="btn secondary">Đăng nhập</Link>
-            <Link href="/signup" className="btn">Bắt đầu</Link>
+            <Link href="/signup" className="btn">Tạo tài khoản</Link>
           </div>
         </div>
       </header>
@@ -39,20 +39,20 @@ export default function HomePage() {
         <section className="container hero-refresh">
           <div className="hero-copy">
             <div className="hero-eyebrow">API gateway cho developer Việt Nam</div>
-            <h1>Một API cho nhiều model. Thanh toán bằng VNĐ.</h1>
+            <h1>Một API cho nhiều model. Trả đúng theo lượng dùng.</h1>
             <p className="muted">
-              Dùng Claude, GPT, Kimi và DeepSeek qua một Base URL. Giữ nguyên SDK và workflow hiện tại,
-              đồng thời theo dõi request, quota và chi phí trong một console duy nhất.
+              Dùng Claude, GPT, Kimi và DeepSeek qua một Base URL. Nạp bằng VNĐ, test model trước khi tích hợp,
+              rồi theo dõi từng request và chi phí trong một console duy nhất.
             </p>
 
             <div className="hero-actions">
-              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Mở Playground</Link>
+              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Tạo tài khoản</Link>
               <a href="#pricing" className="btn secondary" style={{ padding: '12px 20px' }}>Xem bảng giá</a>
             </div>
 
             <div className="hero-proof" aria-label="Điểm nổi bật">
-              <span>1 API key</span>
-              <span>Thanh toán VNĐ</span>
+              <span>Nạp từ 20.000đ</span>
+              <span>1 Credit = 1.000đ</span>
               <span>Chi phí theo request</span>
               <span>OpenAI-compatible</span>
             </div>
@@ -63,13 +63,13 @@ export default function HomePage() {
               <strong>Quick start</strong>
               <span>OpenAI-compatible</span>
             </div>
-            <div className="code-panel">{`export OPENAI_BASE_URL=https://ai-api-gateway.loi822004.workers.dev/v1\nexport OPENAI_API_KEY=apikeya_...\n\ncodex --model gpt-5.6-luna`}</div>
+            <div className="code-panel">{`export OPENAI_BASE_URL=https://ai-api-gateway.loi822004.workers.dev/v1\nexport OPENAI_API_KEY=sk-...\n\ncodex --model gpt-5.6-luna`}</div>
             <div className="gateway-status">
               <div>
-                <strong>Gateway connected</strong>
-                <div className="muted" style={{ fontSize: '12px' }}>Quota được theo dõi theo từng request</div>
+                <strong>Chỉ đổi Base URL và key</strong>
+                <div className="muted" style={{ fontSize: '12px' }}>Giữ nguyên SDK và workflow đang dùng</div>
               </div>
-              <span className="badge">6 model sẵn sàng</span>
+              <span className="badge">6 model đã cấu hình</span>
             </div>
           </div>
         </section>
@@ -87,7 +87,7 @@ export default function HomePage() {
           <div className="section-heading">
             <div>
               <h2 style={{ fontSize: '28px', letterSpacing: '-0.03em' }}>Bảng giá model</h2>
-              <p className="muted" style={{ marginTop: '6px' }}>Giá niêm yết để so sánh nhanh, tính theo lượng token sử dụng thực tế.</p>
+              <p className="muted" style={{ marginTop: '6px' }}>Flat total: tổng input + output token × đơn giá. 1 Credit = 1.000đ.</p>
             </div>
             <Link href="/docs" className="btn secondary">Xem cách tích hợp</Link>
           </div>
@@ -98,7 +98,7 @@ export default function HomePage() {
                 <tr>
                   <th>Model</th>
                   <th>Phù hợp</th>
-                  <th>Giá</th>
+                  <th>Giá / 1M token</th>
                   <th></th>
                 </tr>
               </thead>
@@ -112,9 +112,9 @@ export default function HomePage() {
                       </div>
                     </td>
                     <td className="model-purpose">{model.purpose}</td>
-                    <td><strong>{model.price}</strong></td>
+                    <td><strong>{model.price}</strong><div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{model.credit}</div></td>
                     <td style={{ textAlign: 'right' }}>
-                      <Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Dùng model →</Link>
+                      <Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Bắt đầu →</Link>
                     </td>
                   </tr>
                 ))}
@@ -130,7 +130,7 @@ export default function HomePage() {
             <span className="brand-mark">A</span>
             <span>Apikeya</span>
           </div>
-          <p className="muted" style={{ fontSize: '13px' }}>API gateway · VNĐ-first · dành cho developer Việt Nam</p>
+          <p className="muted" style={{ fontSize: '13px' }}>API gateway · thanh toán VNĐ · dành cho developer Việt Nam</p>
         </div>
       </footer>
     </>
