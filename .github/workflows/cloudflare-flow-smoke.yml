@@ -79,3 +79,5 @@ jobs:
           gh issue comment 8 --repo loinguyen82/apikeya --body-file "$OUT" >/dev/null || true
           cat "$OUT"
           [ "$failures" -eq 0 ]
+
+# retest 2026-08-22 00:10 +07
