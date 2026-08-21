@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
-import { formatCarrotFromMicros } from '@/lib/money'
+import { formatCreditRateFromMicros, formatVndFromMicros } from '@/lib/money'
 
 function providerName(id: string, displayName: string) {
   const value = `${id} ${displayName}`.toLowerCase()
@@ -17,7 +17,7 @@ export default async function ModelsPage() {
     .from('models')
     .select('*')
     .neq('status', 'disabled')
-    .order('display_name')
+    .order('retail_flat_micros_per_mtoken', { ascending: true })
 
   return (
     <div className="page-stack">
@@ -25,18 +25,18 @@ export default async function ModelsPage() {
         <div className="page-head-copy">
           <div className="eyebrow">Model catalog</div>
           <h1>Chọn model theo nhu cầu và chi phí</h1>
-          <p>Danh mục đang bật trên gateway. Giá được tính theo 1 triệu token và trừ theo mức sử dụng thực tế.</p>
+          <p>Giá hiển thị theo 1 triệu token tổng (input + output). 1 Credit = 1.000đ.</p>
         </div>
         <div className="page-actions">
           <Link href="/docs" className="btn secondary">Xem cách tích hợp</Link>
-          <Link href="/dashboard/playground" className="btn">Mở Playground</Link>
+          <Link href="/dashboard/playground" className="btn">Test model</Link>
         </div>
       </header>
 
       <section className="surface model-table-shell">
         <div className="surface-head">
           <h2>{models?.length ?? 0} model khả dụng</h2>
-          <span className="status-chip success"><span className="status-dot" /> Gateway online</span>
+          <span className="status-chip success"><span className="status-dot" /> Đã cấu hình trên gateway</span>
         </div>
         {(models ?? []).length > 0 ? (
           <div className="table-scroll">
@@ -56,9 +56,9 @@ export default async function ModelsPage() {
                       <td>{provider}</td>
                       <td>
                         {m.pricing_mode === 'flat_total' ? (
-                          <><div className="price-main">{formatCarrotFromMicros(m.retail_flat_micros_per_mtoken)}</div><div className="price-sub">flat total</div></>
+                          <><div className="price-main">{formatVndFromMicros(m.retail_flat_micros_per_mtoken)}</div><div className="price-sub">{formatCreditRateFromMicros(m.retail_flat_micros_per_mtoken)} / 1M</div></>
                         ) : (
-                          <><div className="price-main">{formatCarrotFromMicros(m.retail_input_micros_per_mtoken)} in</div><div className="price-sub">{formatCarrotFromMicros(m.retail_output_micros_per_mtoken)} out</div></>
+                          <><div className="price-main">{formatVndFromMicros(m.retail_input_micros_per_mtoken)} in</div><div className="price-sub">{formatVndFromMicros(m.retail_output_micros_per_mtoken)} out</div></>
                         )}
                       </td>
                       <td><span className={`status-chip ${m.streaming_enabled ? 'success' : ''}`}>{m.streaming_enabled ? 'Hỗ trợ' : 'Không'}</span></td>

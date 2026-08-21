@@ -3,7 +3,7 @@ import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
 
-const allowedAmounts = new Set([50000, 100000, 200000, 500000, 1000000, 2000000])
+const allowedAmounts = new Set([20000, 50000, 100000, 200000, 500000, 1000000])
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -40,13 +40,13 @@ export async function POST(req: NextRequest) {
   }
 
   const bonus =
-    amount >= 2000000
-      ? Math.floor(amount * 0.15)
-      : amount >= 1000000
-      ? Math.floor(amount * 0.1)
+    amount >= 1000000
+      ? Math.floor(amount * 0.08)
       : amount >= 500000
-      ? Math.floor(amount * 0.05)
-      : 0
+        ? Math.floor(amount * 0.05)
+        : amount >= 200000
+          ? Math.floor(amount * 0.02)
+          : 0
 
   const admin = createAdminSupabase()
   await admin

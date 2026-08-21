@@ -8,7 +8,7 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,19 +18,24 @@ jobs:
       - run: npm ci
       - run: npm install --no-save @playwright/test@1.55.0
       - run: npx playwright install --with-deps chromium
-      - name: Wait for production deployment
+      - name: Wait for the new production deployment
         shell: bash
         run: |
-          for i in {1..36}; do
-            if curl -fsSL https://apikeya.vercel.app | grep -q "Apikeya"; then
-              echo "Production is serving Apikeya"
+          for i in {1..48}; do
+            if curl -fsSL https://apikeya.vercel.app | grep -q "Nạp từ 20.000đ"; then
+              echo "New production funnel is live"
               exit 0
             fi
             sleep 10
           done
-          echo "Production did not become ready"
+          echo "Expected production revision did not become ready"
           exit 1
       - name: Run E2E
         env:
           BASE_URL: https://apikeya.vercel.app
+          GATEWAY_URL: https://ai-api-gateway.loi822004.workers.dev
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_FUNDED: ${{ secrets.E2E_FUNDED }}
+          E2E_MUTATING: ${{ secrets.E2E_MUTATING }}
         run: npx playwright test e2e/production.spec.js --reporter=line

@@ -1,47 +1,65 @@
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
+import { createServerSupabase } from '@/lib/supabase/server'
 import { ensureUserAccount } from '@/lib/bootstrap-user'
+import { rejectCrossSiteMutation } from '@/lib/security'
+
+function createSignupClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' } },
+  )
+}
 
 export async function POST(req: NextRequest) {
+  const originError = rejectCrossSiteMutation(req)
+  if (originError) return originError
+
   try {
     const { email, password, displayName } = await req.json()
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    const normalizedName = String(displayName || '').trim()
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return NextResponse.json({ error: 'Vui lòng nhập đầy đủ email và mật khẩu' }, { status: 400 })
     }
-
-    if (password.length < 6) {
-      return NextResponse.json({ error: 'Mật khẩu phải có tối thiểu 6 ký tự' }, { status: 400 })
+    if (String(password).length < 8) {
+      return NextResponse.json({ error: 'Mật khẩu phải có tối thiểu 8 ký tự' }, { status: 400 })
     }
 
-    const admin = createAdminSupabase()
-
-    // Production yêu cầu xác minh email để giảm account farming và email giả.
-    const { data, error } = await admin.auth.admin.createUser({
-      email: email.trim().toLowerCase(),
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '')
+    const signupClient = createSignupClient()
+    const { data, error } = await signupClient.auth.signUp({
+      email: normalizedEmail,
       password,
-      email_confirm: process.env.DISABLE_EMAIL_CONFIRMATION === 'true',
-      user_metadata: {
-        display_name: displayName || email.split('@')[0],
+      options: {
+        data: { display_name: normalizedName || normalizedEmail.split('@')[0] },
+        emailRedirectTo: `${appUrl}/login?verified=1`,
       },
     })
 
     if (error) {
-      if (error.message.includes('already registered') || error.message.includes('unique constraint')) {
-        return NextResponse.json({ error: 'Không thể tạo tài khoản với thông tin này. Nếu email đã đăng ký, hãy đăng nhập hoặc khôi phục mật khẩu.' }, { status: 400 })
-      }
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ error: error.message || 'Không thể tạo tài khoản' }, { status: 400 })
     }
 
-    // Trial credit phải được bật có chủ đích; mặc định tắt để tránh abuse bằng nhiều tài khoản.
-    if (data?.user) {
+    if (data.user) {
+      const admin = createAdminSupabase()
       await ensureUserAccount(admin, data.user, {
-        seedBalance: process.env.ENABLE_SIGNUP_TRIAL_CREDIT === 'true',
-        displayName: displayName || email.split('@')[0],
+        seedBalance: false,
+        displayName: normalizedName || normalizedEmail.split('@')[0],
       })
     }
 
-    return NextResponse.json({ ok: true, user: data.user })
+    // Nếu project tắt email confirmation (dev/local), tạo cookie session bằng SSR client.
+    if (data.session) {
+      const serverClient = await createServerSupabase()
+      const { error: loginError } = await serverClient.auth.signInWithPassword({ email: normalizedEmail, password })
+      if (!loginError) return NextResponse.json({ ok: true, requiresConfirmation: false })
+    }
+
+    return NextResponse.json({ ok: true, requiresConfirmation: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 })
   }
