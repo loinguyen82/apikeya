@@ -34,6 +34,7 @@ jobs:
         env:
           BASE_URL: https://apikeya.vercel.app
           GATEWAY_URL: https://ai-api-gateway.loi822004.workers.dev
+          E2E_API_KEY: ${{ secrets.E2E_API_KEY }}
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
           E2E_FUNDED: ${{ secrets.E2E_FUNDED }}
