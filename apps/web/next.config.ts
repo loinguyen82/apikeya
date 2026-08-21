@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next'
 
+// Keep the public gateway endpoint centralized so docs, playground and API-key UI stay in sync.
 const nextConfig: NextConfig = {
   transpilePackages: ['@aiapi/contracts', '@aiapi/core'],
   env: {
