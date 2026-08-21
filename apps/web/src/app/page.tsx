@@ -62,7 +62,7 @@ export default function HomePage() {
               <strong>Quick start</strong>
               <span>OpenAI-compatible</span>
             </div>
-            <div className="code-panel">{`export OPENAI_BASE_URL=https://ai-api-gateway.loi822004.workers.dev/v1\nexport OPENAI_API_KEY=sk-...\n\ncodex --model gpt-5.6-luna`}</div>
+            <div className="code-panel">{`export OPENAI_BASE_URL=https://70-36-125-65.sslip.io/v1\nexport OPENAI_API_KEY=sk-...\n\ncodex --model gpt-5.6-luna`}</div>
             <div className="gateway-status">
               <div>
                 <strong>Key cũng là credential Dashboard</strong>
