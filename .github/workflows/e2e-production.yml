@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           for i in {1..48}; do
-            if curl -fsSL "$BASE_URL" | grep -q "Nạp từ 20.000đ"; then
+            if curl -fsSL "$BASE_URL" | grep -q "Nạp từ 1.000đ"; then
               echo "New production funnel is live at $BASE_URL"
               exit 0
             fi
