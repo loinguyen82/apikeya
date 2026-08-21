@@ -1,0 +1,85 @@
+name: Cloudflare Flow Smoke
+
+on:
+  push:
+    branches:
+      - cloudflare-migration
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test public and auth flow edges
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -u
+          BASE='https://apivn-web.loi822004.workers.dev'
+          OUT=/tmp/apivn-flow-smoke.md
+          : > "$OUT"
+          echo '## APIVN Cloudflare flow smoke test' >> "$OUT"
+          echo >> "$OUT"
+
+          failures=0
+          check_get() {
+            path="$1"; expected="$2"
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' "$BASE$path" || echo 000)
+            echo "- GET $path: HTTP $code (expected $expected)" >> "$OUT"
+            [ "$code" = "$expected" ] || failures=$((failures+1))
+          }
+
+          check_redirect() {
+            path="$1"
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' -D /tmp/headers "$BASE$path" || echo 000)
+            loc=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub(/\r/,"",$2); print $2}' /tmp/headers | tail -n1)
+            echo "- GET $path unauthenticated: HTTP $code → ${loc:-no-location}" >> "$OUT"
+            case "$code" in 301|302|303|307|308) ;; *) failures=$((failures+1));; esac
+          }
+
+          check_get '/' '200'
+          check_get '/signup' '200'
+          check_get '/login' '200'
+          check_get '/docs' '200'
+          check_redirect '/dashboard'
+          check_redirect '/dashboard/billing'
+          check_redirect '/dashboard/api-keys'
+          check_redirect '/dashboard/playground'
+
+          # Well-formed but fake API key: this deliberately exercises the
+          # server-side Supabase runtime. Expected result is a clean 401,
+          # not a 500 caused by missing Cloudflare runtime secrets.
+          code=$(curl -sS -o /tmp/login-body -w '%{http_code}' \
+            -X POST "$BASE/api/auth/login" \
+            -H "Origin: $BASE" \
+            -H 'content-type: application/json' \
+            --data '{"apiKey":"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' || echo 000)
+          body=$(cat /tmp/login-body 2>/dev/null | head -c 500 | tr '\n' ' ')
+          echo "- POST /api/auth/login with fake valid-shape key: HTTP $code — $body" >> "$OUT"
+          [ "$code" = '401' ] || failures=$((failures+1))
+
+          # Top-up must be inaccessible without a session.
+          code=$(curl -sS -o /tmp/topup-body -w '%{http_code}' \
+            -X POST "$BASE/api/topups" \
+            -H "Origin: $BASE" \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data 'amount=20000' || echo 000)
+          body=$(cat /tmp/topup-body 2>/dev/null | head -c 300 | tr '\n' ' ')
+          echo "- POST /api/topups unauthenticated: HTTP $code — $body" >> "$OUT"
+          [ "$code" = '401' ] || failures=$((failures+1))
+
+          echo >> "$OUT"
+          if [ "$failures" -eq 0 ]; then
+            echo '**RESULT: PASS**' >> "$OUT"
+          else
+            echo "**RESULT: FAIL ($failures checks)**" >> "$OUT"
+          fi
+
+          gh issue comment 8 --repo loinguyen82/apikeya --body-file "$OUT" >/dev/null || true
+          cat "$OUT"
+          [ "$failures" -eq 0 ]
