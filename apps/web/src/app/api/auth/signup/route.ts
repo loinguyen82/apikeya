@@ -1,8 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { ensureUserAccount } from '@/lib/bootstrap-user'
 import { rejectCrossSiteMutation } from '@/lib/security'
 
 function createSignupClient() {
@@ -44,13 +42,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message || 'Không thể tạo tài khoản' }, { status: 400 })
     }
 
-    if (data.user) {
-      const admin = createAdminSupabase()
-      await ensureUserAccount(admin, data.user, {
-        seedBalance: false,
-        displayName: normalizedName || normalizedEmail.split('@')[0],
-      })
-    }
+    // Profile + wallet are created only by the auth.users database trigger.
+    // Do not bootstrap data.user here: repeated signup intentionally returns a
+    // non-enumerating response and must not be treated as a newly-created user.
 
     // Nếu project tắt email confirmation (dev/local), tạo cookie session bằng SSR client.
     if (data.session) {
