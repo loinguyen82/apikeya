@@ -50,7 +50,7 @@ jobs:
             -X POST "$BASE/api/topups" \
             -H "Origin: $BASE" \
             -H 'content-type: application/x-www-form-urlencoded' \
-            --data 'amount=20000')
+            --data 'amount=1000')
           topup_loc=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^location:[[:space:]]*/,""); gsub(/\r/,""); print}' /tmp/topup-h | tail -n1)
           [ "$topup" = '303' ] || failures=$((failures+1))
 
@@ -67,17 +67,17 @@ jobs:
           fi
 
           {
-            echo '## APIVN customer funnel E2E'
+            echo '## APIVN customer funnel E2E · 1k minimum'
             echo
             echo "- Test account: $EMAIL"
             echo "- Signup + session: HTTP $signup"
             echo "- Billing after signup: HTTP $billing"
             echo "- Create first key before payment: HTTP $key_before — $key_body"
-            echo "- Create 20k VietQR topup: HTTP $topup → ${topup_loc:-no-location}"
+            echo "- Create 1k topup: HTTP $topup → ${topup_loc:-no-location}"
             echo "- Open generated topup page: HTTP $topup_page"
             echo
             if [ "$failures" -eq 0 ]; then
-              echo '**RESULT: PASS — signup → billing → payment required → VietQR order works**'
+              echo '**RESULT: PASS — minimum 1.000đ topup works**'
             else
               echo "**RESULT: FAIL ($failures checks)**"
             fi
@@ -85,5 +85,3 @@ jobs:
           gh issue comment 8 --repo loinguyen82/apikeya --body-file "$OUT" >/dev/null || true
           cat "$OUT"
           [ "$failures" -eq 0 ]
-
-# verification rerun after Cloudflare redeploy 2026-08-22 00:32 +07
