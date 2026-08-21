@@ -22,7 +22,7 @@ jobs:
         run: |
           set +e
           BASE='https://apivn-web.loi822004.workers.dev'
-          EMAIL="apivn-e2e-$(date +%s)-${RANDOM}@example.test"
+          EMAIL="apivn-e2e-$(date +%s)-${RANDOM}@example.com"
           PASS="E2e-$(openssl rand -hex 16)"
           JAR=/tmp/cookies.txt
           OUT=/tmp/apivn-funnel-e2e.md
