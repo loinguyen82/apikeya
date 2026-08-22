@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react'
 
+const API_KEY_SESSION_STORAGE_KEY = 'apivn.portal.apiKey'
+
 function PasswordField({ id, value, onChange, autoComplete, minLength }: { id: string; value: string; onChange: (value: string) => void; autoComplete: string; minLength?: number }) {
   const [show, setShow] = useState(false)
   return <div className="password-wrap"><input id={id} className="input" type={show ? 'text' : 'password'} minLength={minLength} placeholder="••••••••" value={value} onChange={(e) => onChange(e.target.value)} required autoComplete={autoComplete} /><button type="button" className="password-toggle" aria-label={show ? 'Ẩn' : 'Hiện'} onClick={() => setShow(!show)}>{show ? 'Ẩn' : 'Hiện'}</button></div>
@@ -18,7 +20,8 @@ export function LoginForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(null); setLoading(true)
     try {
-      const body = legacy ? { email: email.trim().toLowerCase(), password } : { apiKey: apiKey.trim() }
+      const normalizedApiKey = apiKey.trim()
+      const body = legacy ? { email: email.trim().toLowerCase(), password } : { apiKey: normalizedApiKey }
       const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       const json = await res.json()
       if (!res.ok || json.error) {
@@ -26,6 +29,17 @@ export function LoginForm() {
         setLoading(false)
         return
       }
+
+      // VietAPI-style flow: the full key is never persisted by our server.
+      // Keep it only for this browser tab/session so Dashboard can reveal/copy
+      // the same credential that was just used to authenticate.
+      try {
+        if (!legacy) window.sessionStorage.setItem(API_KEY_SESSION_STORAGE_KEY, normalizedApiKey)
+        else window.sessionStorage.removeItem(API_KEY_SESSION_STORAGE_KEY)
+      } catch {
+        // Storage can be blocked by the browser; login must still succeed.
+      }
+
       window.location.href = '/dashboard'
     } catch {
       setError('Không thể kết nối đến máy chủ. Vui lòng thử lại.')
@@ -39,19 +53,19 @@ export function LoginForm() {
       {!legacy ? <>
         <div className="field">
           <label htmlFor="login-api-key">API key</label>
-          <input id="login-api-key" className="input" type="password" placeholder="sk-..." value={apiKey} onChange={(e) => setApiKey(e.target.value)} required autoComplete="off" spellCheck={false} />
-          <span className="field-hint">Dùng chính API key gọi model để vào Developer Console.</span>
+          <input id="login-api-key" className="input" type="password" placeholder="sk-apivn-..." value={apiKey} onChange={(e) => setApiKey(e.target.value)} required autoComplete="off" spellCheck={false} />
+          <span className="field-hint">Dùng chính API key gọi model để vào Developer Console. Key chỉ được giữ trong phiên tab hiện tại, không lưu vào localStorage.</span>
         </div>
         <button className="btn" type="submit" disabled={loading} style={{ width: '100%', marginTop: 3 }}>{loading ? 'Đang xác thực…' : 'Vào Dashboard'}</button>
       </> : <>
-        <div className="notice" role="status">Dành cho tài khoản cũ hoặc tài khoản mới chưa nạp tiền để lấy API key.</div>
+        <div className="notice" role="status">Dành cho tài khoản cũ hoặc khi bạn không còn API key để đăng nhập.</div>
         <div className="field"><label htmlFor="login-email">Email khôi phục</label><input id="login-email" className="input" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" /></div>
         <div className="field"><label htmlFor="login-password">Mật khẩu khôi phục</label><PasswordField id="login-password" value={password} onChange={setPassword} autoComplete="current-password" /></div>
         <button className="btn" type="submit" disabled={loading} style={{ width: '100%', marginTop: 3 }}>{loading ? 'Đang đăng nhập…' : 'Tiếp tục bằng tài khoản cũ'}</button>
       </>}
     </form>
     <button className="btn secondary" type="button" onClick={() => { setLegacy(!legacy); setError(null) }}>
-      {legacy ? '← Dùng API key' : 'Chưa có API key?'}
+      {legacy ? '← Dùng API key' : 'Không còn API key?'}
     </button>
   </div>
 }
