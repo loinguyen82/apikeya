@@ -17,6 +17,7 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://ycrqwekkafexqnlxpczd.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_5FgV9hFON8ZZFLc0WEcH7A_q-pUWbus
+      NEXT_PUBLIC_GATEWAY_BASE_URL: https://api.apivn.tech
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,9 +29,15 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
-      - name: Ensure Supabase admin secret on Worker
+      - name: Typecheck web
+        run: npm run typecheck --workspace @aiapi/web
+
+      - name: Build OpenNext for Cloudflare
+        run: npm run cf:build --workspace @aiapi/web
+
+      - name: Sync and validate Worker secrets
         working-directory: apps/web
         shell: bash
         env:
@@ -38,6 +45,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GATEWAY_INTERNAL_TOKEN: ${{ secrets.GATEWAY_INTERNAL_TOKEN }}
+          GATEWAY_USER_ASSERTION_SECRET: ${{ secrets.GATEWAY_USER_ASSERTION_SECRET }}
+          PAYOS_CLIENT_ID: ${{ secrets.PAYOS_CLIENT_ID }}
+          PAYOS_API_KEY: ${{ secrets.PAYOS_API_KEY }}
+          PAYOS_CHECKSUM_KEY: ${{ secrets.PAYOS_CHECKSUM_KEY }}
+          PAYMENT_WEBHOOK_SECRET: ${{ secrets.PAYMENT_WEBHOOK_SECRET }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
         run: |
           set -euo pipefail
 
@@ -52,20 +66,43 @@ jobs:
 
           put_if_present SUPABASE_SECRET_KEY "${SUPABASE_SECRET_KEY:-}"
           put_if_present SUPABASE_SERVICE_ROLE_KEY "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          put_if_present GATEWAY_INTERNAL_TOKEN "${GATEWAY_INTERNAL_TOKEN:-}"
+          put_if_present GATEWAY_USER_ASSERTION_SECRET "${GATEWAY_USER_ASSERTION_SECRET:-}"
+          put_if_present PAYOS_CLIENT_ID "${PAYOS_CLIENT_ID:-}"
+          put_if_present PAYOS_API_KEY "${PAYOS_API_KEY:-}"
+          put_if_present PAYOS_CHECKSUM_KEY "${PAYOS_CHECKSUM_KEY:-}"
+          put_if_present PAYMENT_WEBHOOK_SECRET "${PAYMENT_WEBHOOK_SECRET:-}"
+          put_if_present ADMIN_EMAILS "${ADMIN_EMAILS:-}"
 
           secret_list="$(npx wrangler secret list --format=json)"
-          if ! printf '%s' "$secret_list" | jq -e 'map(.name) | any(. == "SUPABASE_SECRET_KEY" or . == "SUPABASE_SERVICE_ROLE_KEY")' >/dev/null; then
+          has_secret() {
+            printf '%s' "$secret_list" | jq -e --arg name "$1" 'map(.name) | index($name) != null' >/dev/null
+          }
+
+          if ! has_secret SUPABASE_SECRET_KEY && ! has_secret SUPABASE_SERVICE_ROLE_KEY; then
             echo '::error::apivn-web thiếu SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY. Signup và topup sẽ lỗi nếu deploy.'
             exit 1
           fi
 
-          echo 'Supabase admin secret is present on apivn-web.'
+          for required in GATEWAY_INTERNAL_TOKEN GATEWAY_USER_ASSERTION_SECRET; do
+            if ! has_secret "$required"; then
+              echo "::error::apivn-web thiếu $required. Playground production sẽ lỗi."
+              exit 1
+            fi
+          done
 
-      - name: Typecheck web
-        run: npm run typecheck --workspace @aiapi/web
+          payos_count=0
+          for payos_secret in PAYOS_CLIENT_ID PAYOS_API_KEY PAYOS_CHECKSUM_KEY; do
+            if has_secret "$payos_secret"; then
+              payos_count=$((payos_count + 1))
+            fi
+          done
+          if [ "$payos_count" -ne 0 ] && [ "$payos_count" -ne 3 ]; then
+            echo '::error::Cấu hình payOS không đầy đủ. Cần đủ PAYOS_CLIENT_ID, PAYOS_API_KEY và PAYOS_CHECKSUM_KEY hoặc bỏ cả ba.'
+            exit 1
+          fi
 
-      - name: Build OpenNext for Cloudflare
-        run: npm run cf:build --workspace @aiapi/web
+          echo 'Required Worker secrets are present and payOS configuration is consistent.'
 
       - name: Deploy Worker
         working-directory: apps/web
