@@ -29,6 +29,36 @@ describe('OpenAICompatibleAdapter', () => {
     expect(JSON.parse(String(request?.body)).max_tokens).toBe(8192)
   })
 
+  it('adds the reserved output cap when the client omits max tokens', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }), { status: 200 }),
+    )
+
+    await new OpenAICompatibleAdapter('provider').invokeChat({
+      ...baseArgs,
+      outputCap: 4096,
+      body: { model: 'model', messages: [{ role: 'user', content: 'hello' }] },
+    })
+
+    const request = fetchMock.mock.calls[0]?.[1]
+    expect(JSON.parse(String(request?.body)).max_tokens).toBe(4096)
+  })
+
+  it('preserves max_completion_tokens semantics while applying the cap', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }), { status: 200 }),
+    )
+
+    await new OpenAICompatibleAdapter('provider').invokeChat({
+      ...baseArgs,
+      outputCap: 2048,
+      body: { model: 'model', messages: [{ role: 'user', content: 'hello' }], max_completion_tokens: 9000 },
+    })
+
+    const forwarded = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(forwarded.max_completion_tokens).toBe(2048)
+  })
+
   it('marks a successful response without a stream body as unsafe', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
 
