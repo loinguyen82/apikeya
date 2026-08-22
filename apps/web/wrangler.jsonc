@@ -14,7 +14,8 @@
   ],
   "vars": {
     "NEXT_PUBLIC_SUPABASE_URL": "https://ycrqwekkafexqnlxpczd.supabase.co",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_5FgV9hFON8ZZFLc0WEcH7A_q-pUWbus"
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_5FgV9hFON8ZZFLc0WEcH7A_q-pUWbus",
+    "NEXT_PUBLIC_GATEWAY_BASE_URL": "https://api.apivn.tech"
   },
   "assets": {
     "directory": ".open-next/assets",
