@@ -1,37 +1,17 @@
 import type { ChatCompletionRequest, ProviderFailure, TokenUsage } from '@aiapi/contracts'
-import type { ProviderAdapter, ProviderSuccess } from './types.js'
+import type { ParsedStreamUsage, ProviderAdapter, ProviderSuccess } from './types.js'
 import { classifyRetry, requestedOutputCap } from '@aiapi/core'
+import { normalizeProviderUsage, sseEventHasGeneratedOutput } from './usage.js'
 
 const HARD_OUTPUT_CAP = 8192
 
-function readUsage(payload: any): TokenUsage {
-  const usage = payload?.usage
-  if (!usage || typeof usage !== 'object') {
-    throw new Error('Upstream thiếu usage hợp lệ')
-  }
-
-  const inputRaw = usage.prompt_tokens ?? usage.input_tokens
-  const outputRaw = usage.completion_tokens ?? usage.output_tokens
-  const inputTokens = Number(inputRaw)
-  const outputTokens = Number(outputRaw)
-  if (
-    (typeof inputRaw !== 'number' && typeof inputRaw !== 'string') ||
-    (typeof outputRaw !== 'number' && typeof outputRaw !== 'string') ||
-    (typeof inputRaw === 'string' && inputRaw.trim() === '') ||
-    (typeof outputRaw === 'string' && outputRaw.trim() === '') ||
-    !Number.isSafeInteger(inputTokens) ||
-    !Number.isSafeInteger(outputTokens) ||
-    inputTokens < 0 ||
-    outputTokens < 0
-  ) {
-    throw new Error('Upstream thiếu usage hợp lệ')
-  }
-  return { inputTokens, outputTokens }
+function readUsage(payload: unknown): TokenUsage {
+  return normalizeProviderUsage(payload)
 }
 
 function validateCompletionPayload(payload: any): void {
   if (!payload || typeof payload !== 'object' || !Array.isArray(payload.choices)) {
-    throw new Error('Upstream response thiếu choices hợp lệ')
+    throw new Error('Upstream response is missing valid choices')
   }
 }
 
@@ -109,7 +89,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       if (!response.ok) {
         try {
           const declaredNoCharge = args.safeNoChargeStatuses.includes(response.status)
-          const failure: ProviderFailure = {
+          return {
             providerId: this.id,
             code: `UPSTREAM_HTTP_${response.status}`,
             message: (await response.text()).slice(0, 500),
@@ -122,11 +102,11 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
               httpStatus: response.status,
             }),
           }
-          return failure
         } finally {
           clearTimeout(timeout)
         }
       }
+
       const providerRequestId = response.headers.get('x-request-id') ?? undefined
       if (args.body.stream) {
         if (!response.body) {
@@ -151,6 +131,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
           providerRequestId,
         }
       }
+
       try {
         const payload = (await response.json()) as Record<string, unknown>
         validateCompletionPayload(payload)
@@ -181,23 +162,35 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     }
   }
 
-  async parseUsageFromSse(stream: ReadableStream<Uint8Array>): Promise<TokenUsage> {
+  async parseUsageFromSse(stream: ReadableStream<Uint8Array>): Promise<ParsedStreamUsage> {
     const reader = stream.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let lastUsage: TokenUsage | null = null
+    let firstTokenAt: string | undefined
+
     const consumeEvent = (event: string) => {
       for (const line of event.split(/\r?\n/)) {
         if (!line.startsWith('data:')) continue
         const raw = line.slice(5).trim()
         if (!raw || raw === '[DONE]') continue
-        let payload: any
+        let payload: unknown
         try {
           payload = JSON.parse(raw)
         } catch {
           continue
         }
-        if (payload.usage) lastUsage = readUsage(payload)
+        if (!firstTokenAt && sseEventHasGeneratedOutput(payload)) firstTokenAt = new Date().toISOString()
+        if (typeof payload === 'object' && payload !== null && 'usage' in payload) {
+          try {
+            // Some compatible streams emit an early prompt-only usage snapshot.
+            // Ignore it until a complete input/output usage record arrives; the
+            // last complete provider snapshot remains authoritative.
+            lastUsage = readUsage(payload)
+          } catch {
+            // Incomplete usage is metadata, not a stream failure.
+          }
+        }
       }
     }
 
@@ -213,7 +206,8 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       buffer = events.pop() ?? ''
       for (const event of events) consumeEvent(event)
     }
-    if (!lastUsage) throw new Error('Không nhận được usage cuối stream')
-    return lastUsage
+
+    if (!lastUsage) throw new Error('No final provider usage was received from the stream')
+    return { usage: lastUsage, firstTokenAt }
   }
 }

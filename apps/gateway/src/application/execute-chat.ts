@@ -67,6 +67,7 @@ export async function executeChat(args: {
     apiKeyId: args.apiKeyId,
     channel: args.channel,
     modelId: model.id,
+    requestedModelId: args.body.model,
     reserveMicros: reserve.reserveMicros,
     idempotencyKey: args.idempotencyKey,
     pricingMode: price.mode,
@@ -75,6 +76,7 @@ export async function executeChat(args: {
     retailOutputMicrosPerMToken: price.mode === 'split_io' ? price.outputMicrosPerMToken : null,
     estimatedInputTokens: reserve.estimatedInputTokens,
     maxOutputTokens: reserve.maxOutputTokens,
+    stream: args.body.stream === true,
   })
 
   if (reservedRow.id !== requestId) {
@@ -176,7 +178,11 @@ export async function executeChat(args: {
           status: 'succeeded',
           provider_request_id: result.providerRequestId ?? null,
           input_tokens: result.usage.inputTokens,
+          cached_input_tokens: result.usage.cachedInputTokens,
+          cache_creation_input_tokens: result.usage.cacheCreationInputTokens ?? null,
           output_tokens: result.usage.outputTokens,
+          reasoning_tokens: result.usage.reasoningTokens,
+          total_tokens: result.usage.totalTokens,
           completed_at: new Date().toISOString(),
         })
         .eq('id', attempt.id)
@@ -191,8 +197,7 @@ export async function executeChat(args: {
           requestId,
           retailCostMicros: retailCost,
           upstreamCostMicros: upstreamCost,
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
+          usage: result.usage,
           providerId: candidate.providerId,
           providerRequestId: result.providerRequestId,
         })
@@ -222,7 +227,8 @@ export async function executeChat(args: {
 
     const backgroundPromise = (async () => {
       try {
-        const usage = await adapter.parseUsageFromSse(result.meterStream)
+        const parsed = await adapter.parseUsageFromSse(result.meterStream)
+        const usage = parsed.usage
         const retailCost = chargeForUsage(price, usage.inputTokens, usage.outputTokens)
         const upstreamCost = upstreamCostForUsage(
           candidate.upstreamInputMicrosPerMToken,
@@ -235,7 +241,12 @@ export async function executeChat(args: {
           .update({
             status: 'succeeded',
             input_tokens: usage.inputTokens,
+            cached_input_tokens: usage.cachedInputTokens,
+            cache_creation_input_tokens: usage.cacheCreationInputTokens ?? null,
             output_tokens: usage.outputTokens,
+            reasoning_tokens: usage.reasoningTokens,
+            total_tokens: usage.totalTokens,
+            first_token_at: parsed.firstTokenAt ?? null,
             completed_at: new Date().toISOString(),
           })
           .eq('id', attempt.id)
@@ -247,10 +258,10 @@ export async function executeChat(args: {
             requestId,
             retailCostMicros: retailCost,
             upstreamCostMicros: upstreamCost,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
+            usage,
             providerId: candidate.providerId,
             providerRequestId: result.providerRequestId,
+            firstTokenAt: parsed.firstTokenAt,
           })
         } catch (error) {
           console.error('stream settlement failed after provider success', { requestId, error })

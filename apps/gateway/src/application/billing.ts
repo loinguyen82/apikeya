@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { TokenUsage } from '@aiapi/contracts'
 import { rpcOrThrow } from '../repositories/supabase.js'
 
 export async function reserveRequest(
@@ -9,6 +10,7 @@ export async function reserveRequest(
     apiKeyId: string | null
     channel: 'api' | 'playground'
     modelId: string
+    requestedModelId: string
     reserveMicros: bigint
     idempotencyKey?: string
     pricingMode: 'flat_total' | 'split_io'
@@ -17,6 +19,7 @@ export async function reserveRequest(
     retailOutputMicrosPerMToken?: string | bigint | null
     estimatedInputTokens: number
     maxOutputTokens: number
+    stream: boolean
   }
 ) {
   return rpcOrThrow<any>(
@@ -26,6 +29,7 @@ export async function reserveRequest(
       p_api_key_id: input.apiKeyId,
       p_channel: input.channel,
       p_model_id: input.modelId,
+      p_requested_model_id: input.requestedModelId,
       p_reserve_micros: input.reserveMicros.toString(),
       p_idempotency_key: input.idempotencyKey ?? null,
       p_pricing_mode_snapshot: input.pricingMode,
@@ -34,6 +38,7 @@ export async function reserveRequest(
       p_retail_output_snapshot: input.retailOutputMicrosPerMToken == null ? null : input.retailOutputMicrosPerMToken.toString(),
       p_estimated_input_tokens: input.estimatedInputTokens,
       p_max_output_tokens: input.maxOutputTokens,
+      p_stream: input.stream,
     })
   )
 }
@@ -44,10 +49,10 @@ export async function settleRequest(
     requestId: string
     retailCostMicros: bigint
     upstreamCostMicros: bigint
-    inputTokens: number
-    outputTokens: number
+    usage: TokenUsage
     providerId: string
     providerRequestId?: string
+    firstTokenAt?: string
   }
 ) {
   return rpcOrThrow<any>(
@@ -55,10 +60,15 @@ export async function settleRequest(
       p_request_id: input.requestId,
       p_retail_cost_micros: input.retailCostMicros.toString(),
       p_upstream_cost_micros: input.upstreamCostMicros.toString(),
-      p_input_tokens: input.inputTokens,
-      p_output_tokens: input.outputTokens,
+      p_input_tokens: input.usage.inputTokens,
+      p_cached_input_tokens: input.usage.cachedInputTokens,
+      p_cache_creation_input_tokens: input.usage.cacheCreationInputTokens ?? null,
+      p_output_tokens: input.usage.outputTokens,
+      p_reasoning_tokens: input.usage.reasoningTokens,
+      p_total_tokens: input.usage.totalTokens,
       p_provider_id: input.providerId,
       p_provider_request_id: input.providerRequestId ?? null,
+      p_first_token_at: input.firstTokenAt ?? null,
     })
   )
 }

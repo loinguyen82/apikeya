@@ -1,78 +1,54 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth'
-import { formatCreditRateFromMicros, formatVndFromMicros } from '@/lib/money'
-
-function providerName(id: string, displayName: string) {
-  const value = `${id} ${displayName}`.toLowerCase()
-  if (value.includes('claude')) return 'Anthropic'
-  if (value.includes('kimi')) return 'Kimi'
-  if (value.includes('deepseek')) return 'DeepSeek'
-  if (value.includes('gpt') || value.includes('openai')) return 'OpenAI'
-  return 'Model'
-}
+import { formatCarrotFromMicros } from '@/lib/money'
 
 export default async function ModelsPage() {
   const { supabase } = await requireUser()
+
   const { data: models } = await supabase
     .from('models')
     .select('*')
     .neq('status', 'disabled')
-    .order('retail_flat_micros_per_mtoken', { ascending: true })
+    .order('display_name')
 
   return (
-    <div className="page-stack">
-      <header className="page-head">
-        <div className="page-head-copy">
-          <div className="eyebrow">Model catalog</div>
-          <h1>Chọn model theo nhu cầu và chi phí</h1>
-          <p>Giá hiển thị theo 1 triệu token tổng (input + output). 1 Credit = 1.000đ.</p>
-        </div>
-        <div className="page-actions">
-          <Link href="/docs" className="btn secondary">Xem cách tích hợp</Link>
-          <Link href="/dashboard/playground" className="btn">Test model</Link>
-        </div>
-      </header>
+    <div className="stack" style={{ gap: '24px' }}>
+      <div>
+        <h1>Danh mục Mô hình AI 🤖</h1>
+        <p className="muted">
+          Giá được niêm yết theo carrot trên mỗi 1 triệu token. Token là đơn vị đo lường độ dài văn bản của AI.
+        </p>
+      </div>
 
-      <section className="surface model-table-shell">
-        <div className="surface-head">
-          <h2>{models?.length ?? 0} model khả dụng</h2>
-          <span className="status-chip success"><span className="status-dot" /> Đã cấu hình trên gateway</span>
-        </div>
-        {(models ?? []).length > 0 ? (
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead><tr><th>Model</th><th>Provider</th><th>Giá / 1M token</th><th>Streaming</th><th></th></tr></thead>
-              <tbody>
-                {(models ?? []).map((m: any) => {
-                  const provider = providerName(m.id, m.display_name)
-                  return (
-                    <tr key={m.id}>
-                      <td>
-                        <div className="model-primary">
-                          <span className="provider-mark">{provider.slice(0, 1)}</span>
-                          <span><strong>{m.display_name}</strong><small>{m.id}</small></span>
-                        </div>
-                      </td>
-                      <td>{provider}</td>
-                      <td>
-                        {m.pricing_mode === 'flat_total' ? (
-                          <><div className="price-main">{formatVndFromMicros(m.retail_flat_micros_per_mtoken)}</div><div className="price-sub">{formatCreditRateFromMicros(m.retail_flat_micros_per_mtoken)} / 1M</div></>
-                        ) : (
-                          <><div className="price-main">{formatVndFromMicros(m.retail_input_micros_per_mtoken)} in</div><div className="price-sub">{formatVndFromMicros(m.retail_output_micros_per_mtoken)} out</div></>
-                        )}
-                      </td>
-                      <td><span className={`status-chip ${m.streaming_enabled ? 'success' : ''}`}>{m.streaming_enabled ? 'Hỗ trợ' : 'Không'}</span></td>
-                      <td><Link href={`/dashboard/playground?model=${m.id}`} className="btn secondary">Dùng thử</Link></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+      <div className="grid">
+        {(models ?? []).map((m: any) => (
+          <div className="card stack" key={m.id} style={{ justifyContent: 'space-between' }}>
+            <div className="stack" style={{ gap: '12px' }}>
+              <div className="row">
+                <span className="badge">{(m.tags ?? [])[0] ?? 'AI'}</span>
+                <code className="muted" style={{ fontSize: '13px' }}>{m.id}</code>
+              </div>
+              <h3>{m.display_name}</h3>
+              <p className="muted" style={{ fontSize: '14px' }}>{m.description}</p>
+              <div className="price">
+                {m.pricing_mode === 'flat_total'
+                  ? formatCarrotFromMicros(m.retail_flat_micros_per_mtoken)
+                  : `${formatCarrotFromMicros(m.retail_input_micros_per_mtoken)} (in) / ${formatCarrotFromMicros(m.retail_output_micros_per_mtoken)} (out)`}
+                <span className="muted" style={{ fontSize: '13px', fontWeight: 400 }}> / 1M token</span>
+              </div>
+            </div>
+
+            <div className="row" style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--line)' }}>
+              <span className="muted" style={{ fontSize: '13px' }}>
+                {m.streaming_enabled ? '✓ Hỗ trợ Streaming' : '⚡ Non-stream'}
+              </span>
+              <Link href={`/dashboard/hexa?model=${encodeURIComponent(m.id)}`} className="btn secondary" style={{ padding: '6px 14px', fontSize: '13px' }}>
+                Phân tích token →
+              </Link>
+            </div>
           </div>
-        ) : (
-          <div className="surface-body"><div className="empty-card"><div className="empty-icon">M</div><strong>Chưa có model khả dụng</strong><p>Danh mục model hiện đang trống. Hãy quay lại sau hoặc kiểm tra cấu hình quản trị.</p></div></div>
-        )}
-      </section>
+        ))}
+      </div>
     </div>
   )
 }

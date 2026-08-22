@@ -16,6 +16,12 @@ export interface ProviderStreamSuccess {
   providerRequestId?: string
 }
 
+export interface ParsedStreamUsage {
+  usage: TokenUsage
+  /** Server-observed time of the first generated SSE delta, if measurable. */
+  firstTokenAt?: string
+}
+
 export type ProviderSuccess = ProviderJsonSuccess | ProviderStreamSuccess
 
 export interface ProviderAdapter {
@@ -28,5 +34,5 @@ export interface ProviderAdapter {
     timeoutMs: number
     safeNoChargeStatuses: number[]
   }): Promise<ProviderSuccess | ProviderFailure>
-  parseUsageFromSse(stream: ReadableStream<Uint8Array>): Promise<TokenUsage>
+  parseUsageFromSse(stream: ReadableStream<Uint8Array>): Promise<ParsedStreamUsage>
 }

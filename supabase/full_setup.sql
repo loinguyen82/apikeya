@@ -106,6 +106,8 @@ create table if not exists public.models (
   default_max_output_tokens integer not null default 2048,
   max_output_tokens integer not null default 8192,
   streaming_enabled boolean not null default false,
+  context_window_tokens integer check (context_window_tokens is null or context_window_tokens > 0),
+  tokenizer_family text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (
@@ -135,6 +137,8 @@ create table if not exists public.api_requests (
   api_key_id uuid references public.api_keys(id) on delete restrict,
   channel text not null default 'api' check (channel in ('api','playground')),
   model_id text not null references public.models(id) on delete restrict,
+  requested_model_id text,
+  stream boolean not null default false,
   status public.api_request_status not null,
   idempotency_key text,
   reserve_micros bigint not null check (reserve_micros >= 0),
@@ -148,16 +152,22 @@ create table if not exists public.api_requests (
   upstream_cost_micros bigint not null default 0 check (upstream_cost_micros >= 0),
   billing_gap_micros bigint not null default 0 check (billing_gap_micros >= 0),
   input_tokens integer,
+  cached_input_tokens integer check (cached_input_tokens is null or cached_input_tokens >= 0),
+  cache_creation_input_tokens integer check (cache_creation_input_tokens is null or cache_creation_input_tokens >= 0),
   output_tokens integer,
+  reasoning_tokens integer check (reasoning_tokens is null or reasoning_tokens >= 0),
+  total_tokens integer check (total_tokens is null or total_tokens >= 0),
   provider_id text references public.providers(id),
   provider_request_id text,
   error_code text,
   created_at timestamptz not null default now(),
   started_at timestamptz,
+  first_token_at timestamptz,
   completed_at timestamptz
 );
 create unique index if not exists api_requests_idem_unique on public.api_requests(user_id,idempotency_key) where idempotency_key is not null;
 create index if not exists api_requests_user_created_idx on public.api_requests(user_id,created_at desc);
+create index if not exists api_requests_user_created_id_idx on public.api_requests(user_id,created_at desc,id desc);
 
 create table if not exists public.provider_attempts (
   id uuid primary key default gen_random_uuid(),
@@ -170,9 +180,14 @@ create table if not exists public.provider_attempts (
   status public.provider_attempt_status not null,
   provider_request_id text,
   input_tokens integer,
+  cached_input_tokens integer check (cached_input_tokens is null or cached_input_tokens >= 0),
+  cache_creation_input_tokens integer check (cache_creation_input_tokens is null or cache_creation_input_tokens >= 0),
   output_tokens integer,
+  reasoning_tokens integer check (reasoning_tokens is null or reasoning_tokens >= 0),
+  total_tokens integer check (total_tokens is null or total_tokens >= 0),
   error_code text,
   created_at timestamptz not null default now(),
+  first_token_at timestamptz,
   completed_at timestamptz
 );
 create index if not exists provider_attempts_request_idx on public.provider_attempts(api_request_id,created_at);
@@ -226,6 +241,7 @@ create or replace function public.reserve_api_request(
   p_api_key_id uuid,
   p_channel text,
   p_model_id text,
+  p_requested_model_id text,
   p_reserve_micros bigint,
   p_idempotency_key text default null,
   p_pricing_mode_snapshot text default null,
@@ -233,7 +249,8 @@ create or replace function public.reserve_api_request(
   p_retail_input_snapshot bigint default null,
   p_retail_output_snapshot bigint default null,
   p_estimated_input_tokens integer default 0,
-  p_max_output_tokens integer default 0
+  p_max_output_tokens integer default 0,
+  p_stream boolean default false
 ) returns public.api_requests
 language plpgsql security definer set search_path=public as $$
 declare
@@ -263,11 +280,11 @@ begin
     where user_id=p_user_id;
     
   insert into public.api_requests(
-    id,user_id,api_key_id,channel,model_id,status,reserve_micros,idempotency_key,started_at,
+    id,user_id,api_key_id,channel,model_id,requested_model_id,status,reserve_micros,idempotency_key,started_at,stream,
     pricing_mode_snapshot,retail_flat_micros_per_mtoken_snapshot,retail_input_micros_per_mtoken_snapshot,
     retail_output_micros_per_mtoken_snapshot,reserve_estimated_input_tokens,reserve_max_output_tokens
   ) values(
-    p_request_id,p_user_id,p_api_key_id,p_channel,p_model_id,'reserved',p_reserve_micros,p_idempotency_key,now(),
+    p_request_id,p_user_id,p_api_key_id,p_channel,p_model_id,p_requested_model_id,'reserved',p_reserve_micros,p_idempotency_key,now(),coalesce(p_stream,false),
     p_pricing_mode_snapshot,p_retail_flat_snapshot,p_retail_input_snapshot,p_retail_output_snapshot,
     p_estimated_input_tokens,p_max_output_tokens
   ) returning * into v_request;
@@ -289,9 +306,14 @@ create or replace function public.settle_api_request(
   p_retail_cost_micros bigint,
   p_upstream_cost_micros bigint,
   p_input_tokens integer,
+  p_cached_input_tokens integer,
+  p_cache_creation_input_tokens integer,
   p_output_tokens integer,
+  p_reasoning_tokens integer,
+  p_total_tokens integer,
   p_provider_id text,
-  p_provider_request_id text default null
+  p_provider_request_id text default null,
+  p_first_token_at timestamptz default null
 ) returns public.api_requests
 language plpgsql security definer set search_path=public as $$
 declare
@@ -303,7 +325,11 @@ declare
   gap bigint;
 begin
   if p_retail_cost_micros < 0 or p_upstream_cost_micros < 0
-    or p_input_tokens < 0 or p_output_tokens < 0 then
+    or p_input_tokens < 0 or p_output_tokens < 0
+    or (p_cached_input_tokens is not null and p_cached_input_tokens < 0)
+    or (p_cache_creation_input_tokens is not null and p_cache_creation_input_tokens < 0)
+    or (p_reasoning_tokens is not null and p_reasoning_tokens < 0)
+    or (p_total_tokens is not null and p_total_tokens < 0) then
     raise exception 'INVALID_SETTLEMENT_VALUES';
   end if;
   if p_provider_id is null or length(trim(p_provider_id)) = 0 then
@@ -337,8 +363,10 @@ begin
 
   update public.api_requests set
     status='settled', retail_cost_micros=p_retail_cost_micros, upstream_cost_micros=p_upstream_cost_micros,
-    billing_gap_micros=gap, input_tokens=p_input_tokens, output_tokens=p_output_tokens,
-    provider_id=p_provider_id, provider_request_id=p_provider_request_id, completed_at=now()
+    billing_gap_micros=gap, input_tokens=p_input_tokens, cached_input_tokens=p_cached_input_tokens,
+    cache_creation_input_tokens=p_cache_creation_input_tokens, output_tokens=p_output_tokens,
+    reasoning_tokens=p_reasoning_tokens, total_tokens=p_total_tokens, provider_id=p_provider_id,
+    provider_request_id=p_provider_request_id, first_token_at=coalesce(first_token_at,p_first_token_at), completed_at=now()
     where id=r.id returning * into r;
   return r;
 end; $$;
@@ -399,13 +427,13 @@ begin
 end; $$;
 
 -- Phân quyền cho RPC
-revoke all on function public.reserve_api_request(uuid,uuid,uuid,text,text,bigint,text,text,bigint,bigint,bigint,integer,integer) from public, anon, authenticated;
-revoke all on function public.settle_api_request(uuid,bigint,bigint,integer,integer,text,text) from public, anon, authenticated;
+revoke all on function public.reserve_api_request(uuid,uuid,uuid,text,text,text,bigint,text,text,bigint,bigint,bigint,integer,integer,boolean) from public, anon, authenticated;
+revoke all on function public.settle_api_request(uuid,bigint,bigint,integer,integer,integer,integer,integer,integer,text,text,timestamptz) from public, anon, authenticated;
 revoke all on function public.release_api_request(uuid,text) from public, anon, authenticated;
 revoke all on function public.apply_paid_topup(uuid,text) from public, anon, authenticated;
 
-grant execute on function public.reserve_api_request(uuid,uuid,uuid,text,text,bigint,text,text,bigint,bigint,bigint,integer,integer) to service_role;
-grant execute on function public.settle_api_request(uuid,bigint,bigint,integer,integer,text,text) to service_role;
+grant execute on function public.reserve_api_request(uuid,uuid,uuid,text,text,text,bigint,text,text,bigint,bigint,bigint,integer,integer,boolean) to service_role;
+grant execute on function public.settle_api_request(uuid,bigint,bigint,integer,integer,integer,integer,integer,integer,text,text,timestamptz) to service_role;
 grant execute on function public.release_api_request(uuid,text) to service_role;
 grant execute on function public.apply_paid_topup(uuid,text) to service_role;
 

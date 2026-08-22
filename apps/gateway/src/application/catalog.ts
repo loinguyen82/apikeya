@@ -29,7 +29,7 @@ export async function loadRuntimeModel(
   const { data: model, error } = await db
     .from('models')
     .select(
-      'id,display_name,description,tags,status,pricing_mode,retail_flat_micros_per_mtoken,retail_input_micros_per_mtoken,retail_output_micros_per_mtoken,default_max_output_tokens,max_output_tokens,streaming_enabled'
+      'id,display_name,description,tags,status,pricing_mode,retail_flat_micros_per_mtoken,retail_input_micros_per_mtoken,retail_output_micros_per_mtoken,default_max_output_tokens,max_output_tokens,streaming_enabled,context_window_tokens,tokenizer_family'
     )
     .eq('id', canonicalModelId)
     .maybeSingle()
@@ -83,6 +83,8 @@ export async function loadRuntimeModel(
     defaultMaxOutputTokens: model.default_max_output_tokens,
     maxOutputTokens: model.max_output_tokens,
     streamingEnabled: model.streaming_enabled,
+    contextWindowTokens: model.context_window_tokens,
+    tokenizerFamily: model.tokenizer_family,
     providers,
   }
 }

@@ -7,7 +7,9 @@ Cổng trung gian (API Gateway) thương mại hóa dịch vụ AI dành cho th�
 - `packages/contracts`: Định nghĩa chuẩn TypeScript cho toàn bộ hợp đồng API, models, và error codes.
 - `packages/core`: Xử lý tính toán tiền tệ `microVND` (`1 VND = 1.000 microVND`), công thức tính cước, tính tiền tạm giữ trước khi gọi upstream, và chính sách failover an toàn.
 - `apps/gateway`: Cổng API Gateway siêu tốc sử dụng Hono (tương thích Cloudflare Workers / Node.js), định tuyến đa nguồn, xác thực SHA-256 API Key, xử lý SSE streaming song song với metering.
-- `apps/web`: Ứng dụng web Next.js 16 App Router cho Khách hàng (Playground, Nạp tiền VietQR, Quản lý Key, Báo cáo chi tiêu) và Quản trị viên (Báo cáo Doanh thu/Lợi nhuận gộp, Quản lý bảng giá, Đối soát giao dịch).
+- `apps/web`: Ứng dụng web Next.js 16 App Router cho Khách hàng (Hexa local token analyzer, Nạp tiền VietQR, Quản lý Key, Báo cáo chi tiêu) và Quản trị viên (Báo cáo Doanh thu/Lợi nhuận gộp, Quản lý bảng giá, Đối soát giao dịch).
+
+Hexa chạy cục bộ trong trình duyệt: nội dung dán vào không được gửi đến gateway/provider và không tạo usage hay chi phí.
 - `supabase/migrations`: Cơ sở dữ liệu PostgreSQL, RLS, và các hàm RPC bảo mật (`SECURITY DEFINER`).
 
 ## Hướng dẫn Thiết lập & Chạy
@@ -20,9 +22,10 @@ Mở SQL Editor trên Supabase Dashboard và chạy lần lượt:
 4. `supabase/migrations/004_topup_expiry.sql`
 5. `supabase/migrations/005_logic_hardening.sql`
 6. `supabase/migrations/006_abuse_hardening.sql`
-7. `supabase/seed.sql`
+7. `supabase/migrations/007_quota_hexa.sql`
+8. `supabase/seed.sql`
 
-Database đã cài từ trước cần chạy lần lượt các migration `004`, `005`, và `006` còn thiếu trước khi deploy code mới.
+Database đã cài từ trước cần chạy lần lượt các migration còn thiếu, bao gồm `004` đến `007`, trước khi deploy code mới.
 
 ### 2. Cấu hình Môi trường
 Sao chép `.env.example` thành `.env.local` trong `apps/web` và điền các thông tin:

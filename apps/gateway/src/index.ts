@@ -4,7 +4,6 @@ import type { Env } from './env.js'
 import { requireApiKey } from './middleware/api-key.js'
 import { chatRoute } from './routes/chat.js'
 import { modelsRoute } from './routes/models.js'
-import { internalPlaygroundRoute } from './routes/internal-playground.js'
 import { responsesRoute } from './routes/responses.js'
 import { messagesRoute } from './routes/messages.js'
 
@@ -34,8 +33,6 @@ app.route('/v1/responses', responsesRoute)
 app.use('/v1/messages/*', requireApiKey)
 app.use('/v1/messages', requireApiKey)
 app.route('/v1/messages', messagesRoute)
-
-app.route('/internal/playground/chat', internalPlaygroundRoute)
 
 app.notFound((c) => c.json({ error: { message: 'Not found', type: 'not_found' } }, 404))
 

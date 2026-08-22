@@ -40,4 +40,40 @@ describe('OpenAICompatibleAdapter', () => {
     expect('retryClass' in result && result.retryClass).toBe('unsafe')
     expect('code' in result && result.code).toBe('UPSTREAM_STREAM_BODY_MISSING')
   })
+
+  it('captures a server-observed first generated token while metering SSE usage', async () => {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2}}\n\n'))
+        controller.close()
+      },
+    })
+
+    const result = await new OpenAICompatibleAdapter('provider').parseUsageFromSse(stream)
+
+    expect(result.usage).toMatchObject({ inputTokens: 5, outputTokens: 2, providerReported: true })
+    expect(result.firstTokenAt).toEqual(expect.any(String))
+  })
+
+  it('ignores incomplete usage metadata and retains only the last complete usage snapshot', async () => {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{}}]}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[],"usage":{"prompt_tokens":5}}\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":1}}\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}\n\n'))
+        controller.close()
+      },
+    })
+
+    const result = await new OpenAICompatibleAdapter('provider').parseUsageFromSse(stream)
+
+    expect(result.usage).toMatchObject({ inputTokens: 5, outputTokens: 2, totalTokens: 7 })
+    expect(result.firstTokenAt).toEqual(expect.any(String))
+  })
 })
