@@ -13,7 +13,7 @@ type NavItem = { href: string; label: string; icon: IconName }
 const consoleNav: NavItem[] = [
   { href: '/dashboard', label: 'Overview', icon: 'overview' },
   { href: '/dashboard/models', label: 'Models', icon: 'models' },
-  { href: '/dashboard/api-keys', label: 'API Keys', icon: 'key' },
+  { href: '/dashboard/api-keys', label: 'API Key', icon: 'key' },
   { href: '/dashboard/hexa', label: 'Hexa', icon: 'play' },
   { href: '/dashboard/quota', label: 'Quota', icon: 'usage' },
   { href: '/dashboard/billing', label: 'Billing', icon: 'billing' },
