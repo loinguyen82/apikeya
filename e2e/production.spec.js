@@ -35,7 +35,7 @@ test.describe('APIVN public contract', () => {
     await expect(page.getByRole('heading', { name: /tích hợp bằng api chuẩn openai/i })).toBeVisible()
     await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' })
     await expect(page.getByLabel('Email')).toBeVisible()
-    await expect(page.getByLabel('Mật khẩu')).toBeVisible()
+    await expect(page.getByLabel('Mật khẩu', { exact: true })).toBeVisible()
     await expect(page.getByLabel('API key')).toHaveCount(0)
   })
 
