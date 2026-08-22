@@ -25,7 +25,7 @@ export interface ProviderAdapter {
     apiKey: string
     upstreamModel: string
     body: ChatCompletionRequest
-    outputCap: number
+    outputCap?: number
     timeoutMs: number
     safeNoChargeStatuses: number[]
   }): Promise<ProviderSuccess | ProviderFailure>
