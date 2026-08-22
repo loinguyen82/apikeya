@@ -19,7 +19,7 @@ Gateway gọi upstream A6API và các provider được cấu hình.
 
 ## 1. Chuẩn bị database
 
-Áp dụng toàn bộ migration trong `supabase/migrations` theo thứ tự tên file, từ `001_core.sql` đến `014_remove_unverified_context_values.sql`, sau đó chạy seed khi khởi tạo môi trường mới.
+Áp dụng toàn bộ migration trong `supabase/migrations` theo thứ tự tên file, từ `001_core.sql` đến `015_add_a6_marketplace_models.sql`, sau đó chạy seed khi khởi tạo môi trường mới.
 
 Không bỏ qua các migration financial hardening và account-centric console. Trước khi mở traffic thật, chạy các invariant trong `supabase/tests` trên môi trường được phép.
 
@@ -35,6 +35,7 @@ Repository cần các GitHub Actions secrets sau:
 | `GATEWAY_INTERNAL_TOKEN` | Xác thực Web -> Gateway cho Playground |
 | `GATEWAY_USER_ASSERTION_SECRET` | Ký user assertion giữa Web và Gateway |
 | `ADMIN_EMAILS` | Danh sách email admin |
+| `A6API_KEY` | API key server-side để Admin scan/cập nhật giá A6 Marketplace |
 | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | Bắt buộc đủ cả ba khi bật PayOS |
 | `PAYMENT_WEBHOOK_SECRET` | Chỉ dùng cho webhook legacy nếu còn cần |
 | `E2E_EMAIL`, `E2E_PASSWORD` | Tài khoản QA production chuyên dụng |
@@ -61,6 +62,8 @@ npx wrangler secret put SUPABASE_URL
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 npx wrangler secret put A6API_BASE_URL
 npx wrangler secret put A6API_KEY
+
+Admin price scan/update on `apivn-web` also needs the GitHub Actions secret `A6API_KEY`; the deploy workflow syncs it to the web Worker.
 npx wrangler secret put INTERNAL_ADMIN_TOKEN
 npx wrangler secret put GATEWAY_USER_ASSERTION_SECRET
 ```

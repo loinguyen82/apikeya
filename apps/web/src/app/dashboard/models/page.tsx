@@ -10,6 +10,9 @@ function providerName(id: string, displayName: string) {
   if (value.includes('deepseek')) return 'DeepSeek'
   if (value.includes('gemini')) return 'Google'
   if (value.includes('glm')) return 'Zhipu AI'
+  if (value.includes('grok')) return 'xAI'
+  if (value.includes('qwen')) return 'Alibaba'
+  if (value.includes('minimax')) return 'MiniMax'
   if (value.includes('gpt') || value.includes('openai')) return 'OpenAI'
   return 'APIVN route'
 }

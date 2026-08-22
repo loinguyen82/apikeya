@@ -54,7 +54,7 @@ export const defaultBankConfig: BankConfig = {
 | **Quản lý API Key**| `/dashboard/api-keys` | Tạo key `ak_live_...`, copy 1-click, thu hồi key |
 | **Nạp tiền VietQR**| `/dashboard/billing` | Quét mã VietQR chuyển khoản ngân hàng |
 | **Lịch sử Chi tiêu**| `/dashboard/usage` | Báo cáo chi tiết từng request, input/output tokens |
-| **Danh mục Models**| `/dashboard/models` | Xem thông số kỹ thuật và giá của 6 model AI |
+| **Danh mục Models**| `/dashboard/models` | Xem thông số kỹ thuật và giá của các model AI |
 | **Tài liệu API** | `/docs` | Hướng dẫn tích hợp Python, Node.js, cURL, Cursor IDE |
 | **Admin KPIs** | `/admin` | Tổng quan doanh thu, chi phí A6, lợi nhuận gộp |
 | **Admin Nạp tiền** | `/admin/topups` | Duyệt đơn nạp tiền 1-click & cộng credit thủ công |

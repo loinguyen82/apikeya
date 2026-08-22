@@ -57,6 +57,7 @@ jobs:
           PAYOS_API_KEY: ${{ secrets.PAYOS_API_KEY }}
           PAYOS_CHECKSUM_KEY: ${{ secrets.PAYOS_CHECKSUM_KEY }}
           PAYMENT_WEBHOOK_SECRET: ${{ secrets.PAYMENT_WEBHOOK_SECRET }}
+          A6API_KEY: ${{ secrets.A6API_KEY }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
         run: |
           set -euo pipefail
@@ -79,6 +80,7 @@ jobs:
           put_if_present PAYOS_API_KEY "${PAYOS_API_KEY:-}"
           put_if_present PAYOS_CHECKSUM_KEY "${PAYOS_CHECKSUM_KEY:-}"
           put_if_present PAYMENT_WEBHOOK_SECRET "${PAYMENT_WEBHOOK_SECRET:-}"
+          put_if_present A6API_KEY "${A6API_KEY:-}"
           put_if_present ADMIN_EMAILS "${ADMIN_EMAILS:-}"
 
           secret_list="$(npx wrangler secret list --format=json)"
