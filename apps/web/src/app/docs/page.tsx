@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 export default function DocsPage() {
-  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://ai-api-gateway.loi822004.workers.dev'
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://api.apivn.tech'
   const pythonExample = `from openai import OpenAI\n\nclient = OpenAI(\n    api_key="sk-your_api_key_here",\n    base_url="${gatewayUrl}/v1"\n)\n\nresponse = client.chat.completions.create(\n    model="kimi-k2.6",\n    messages=[{"role": "user", "content": "Xin chào"}]\n)\nprint(response.choices[0].message.content)`
 
   return <main className="docs-shell">
@@ -15,7 +15,7 @@ export default function DocsPage() {
     <div className="docs-grid">
       <nav className="surface docs-nav"><div className="eyebrow" style={{ marginBottom: 8 }}>Nội dung</div><a href="#quickstart">Quick start</a><a href="#openai">OpenAI SDK</a><a href="#node">Node.js</a><a href="#claude">Claude Code</a><a href="#curl">cURL</a></nav>
       <div className="docs-content">
-        <section id="quickstart" className="surface docs-section"><div className="eyebrow">Quick start</div><h2>Bốn bước từ tài khoản mới đến request thật</h2><div className="quick-config"><div className="config-item"><small>1 · Nạp số dư</small><strong>Từ 20.000đ</strong><p className="muted" style={{ marginTop: 5 }}>Vào Billing và tạo VietQR.</p></div><div className="config-item"><small>2 · Test model</small><strong>Playground</strong><p className="muted" style={{ marginTop: 5 }}>Kiểm tra model trước khi tích hợp.</p></div></div><div className="quick-config" style={{ marginTop: 12 }}><div className="config-item"><small>3 · API key</small><strong>Tạo trong Dashboard</strong><p className="muted" style={{ marginTop: 5 }}>Secret dạng sk-... chỉ hiện một lần.</p></div><div className="config-item"><small>4 · Base URL</small><code>{gatewayUrl}/v1</code></div></div></section>
+        <section id="quickstart" className="surface docs-section"><div className="eyebrow">Quick start</div><h2>Bốn bước từ tài khoản mới đến request thật</h2><div className="quick-config"><div className="config-item"><small>1 · Nạp số dư</small><strong>Từ 1.000đ</strong><p className="muted" style={{ marginTop: 5 }}>Vào Billing và tạo thanh toán.</p></div><div className="config-item"><small>2 · Test model</small><strong>Playground</strong><p className="muted" style={{ marginTop: 5 }}>Kiểm tra model trước khi tích hợp.</p></div></div><div className="quick-config" style={{ marginTop: 12 }}><div className="config-item"><small>3 · API key</small><strong>Tạo trong Dashboard</strong><p className="muted" style={{ marginTop: 5 }}>Secret dạng sk-... chỉ hiện một lần.</p></div><div className="config-item"><small>4 · Base URL</small><code>{gatewayUrl}/v1</code></div></div></section>
 
         <section id="openai" className="surface docs-section"><h2>Python · OpenAI SDK</h2><pre className="docs-code">{pythonExample}</pre></section>
 
