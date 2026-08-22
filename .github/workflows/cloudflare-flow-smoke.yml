@@ -1,4 +1,5 @@
 name: Cloudflare Flow Smoke
+# Mirrored on the default branch because workflow_run listeners must exist there.
 
 on:
   workflow_run:
