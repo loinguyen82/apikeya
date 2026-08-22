@@ -7,7 +7,12 @@ import { modelsRoute } from './routes/models.js'
 import { internalPlaygroundRoute } from './routes/internal-playground.js'
 import { responsesRoute } from './routes/responses.js'
 import { messagesRoute } from './routes/messages.js'
-import { ensureTelegramWebhook, handleTelegramUpdate, runModelHealthScan } from './monitor/model-health.js'
+import {
+  ensureTelegramWebhook,
+  handleTelegramUpdate,
+  runModelHealthScan,
+  sendTelegramMessage,
+} from './monitor/model-health.js'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -103,10 +108,21 @@ const worker: ExportedHandler<Env> = {
   fetch(request, env, ctx) {
     return app.fetch(request, env, ctx)
   },
-  scheduled(_controller, env, ctx) {
+  scheduled(controller, env, ctx) {
     ctx.waitUntil((async () => {
       await ensureTelegramWebhook(env)
-      await runModelHealthScan(env, { notifyChanges: true })
+      const result = await runModelHealthScan(env, { notifyChanges: true })
+
+      // Probe every 5 minutes, but send the full VietAPI-style report every 15 minutes.
+      // State-change alerts are still sent immediately by runModelHealthScan.
+      const scheduledMinute = Math.floor(controller.scheduledTime / 60_000)
+      if (
+        scheduledMinute % 15 === 0 &&
+        env.TELEGRAM_BOT_TOKEN &&
+        env.TELEGRAM_CHAT_ID
+      ) {
+        await sendTelegramMessage(env, env.TELEGRAM_CHAT_ID, result.text)
+      }
     })())
   },
 }
