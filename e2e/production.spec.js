@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 
 const baseURL = process.env.BASE_URL || 'https://apivn.tech'
 const gatewayURL = process.env.GATEWAY_URL || 'https://api.apivn.tech'
+const expectedDeploySha = process.env.EXPECTED_DEPLOY_SHA || ''
+const expectedPaymentMode = process.env.EXPECTED_PAYMENT_MODE || 'disabled'
 const e2eApiKey = process.env.E2E_API_KEY || ''
 const e2eEmail = process.env.E2E_EMAIL || ''
 const e2ePassword = process.env.E2E_PASSWORD || ''
@@ -20,10 +22,12 @@ test.describe('APIVN public contract', () => {
   test('deployed revision exposes account-centric console contract', async ({ request }) => {
     const version = await request.get(`${baseURL}/api/version`)
     expect(version.status()).toBe(200)
-    expect((await version.json())?.version).toBe('developer-console-v1')
+    const versionBody = await version.json()
+    expect(versionBody?.version).toBe('developer-console-v1')
+    if (expectedDeploySha) expect(versionBody?.revision).toBe(expectedDeploySha)
     const health = await request.get(`${baseURL}/api/health`)
     expect(health.status()).toBe(200)
-    expect((await health.json())?.paymentMode).toBe('disabled')
+    expect((await health.json())?.paymentMode).toBe(expectedPaymentMode)
   })
 
   test('landing, docs and account auth render', async ({ page }) => {
@@ -65,6 +69,7 @@ test.describe('APIVN authenticated journey', () => {
   })
 
   test('disabled Billing never exposes a fake success action', async ({ page }) => {
+    test.skip(expectedPaymentMode !== 'disabled', 'Production billing is intentionally live.')
     await login(page)
     await page.goto(`${baseURL}/dashboard/billing`, { waitUntil: 'networkidle' })
     await expect(page.getByText('PayOS chưa cấu hình')).toBeVisible()

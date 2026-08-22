@@ -1,167 +1,130 @@
-# Hướng Dẫn Deploy Live — AI API Reseller V4
+# Deploy production APIVN trên Cloudflare
 
-## Tổng Quan Kiến Trúc Production
+Tài liệu này mô tả kiến trúc production hiện tại của nhánh `cloudflare-migration`. Hướng dẫn Vercel cũ không còn được dùng.
 
-```
-                        Internet
-                           │
-              ┌────────────┼────────────┐
-              ▼                         ▼
-    ┌──────────────────┐   ┌──────────────────────┐
-    │   Vercel (Free)  │   │  Cloudflare Workers   │
-    │   Next.js Web    │   │  Hono API Gateway     │
-    │   *.vercel.app   │   │  *.workers.dev        │
-    └────────┬─────────┘   └───────────┬───────────┘
-             │                         │
-             └──────────┬──────────────┘
-                        ▼
-              ┌──────────────────┐
-              │  Supabase Cloud  │
-              │  PostgreSQL + Auth│
-              └──────────────────┘
-                        │
-                        ▼
-              ┌──────────────────┐
-              │  A6API Upstream  │
-              │  (AI Models)     │
-              └──────────────────┘
+## Kiến trúc production
+
+```text
+https://apivn.tech
+  -> Cloudflare Worker apivn-web
+  -> Next.js/OpenNext
+
+https://api.apivn.tech
+  -> Cloudflare Worker ai-api-gateway
+  -> Hono gateway
+
+Hai Worker dùng chung Supabase/PostgreSQL.
+Gateway gọi upstream A6API và các provider được cấu hình.
 ```
 
----
+## 1. Chuẩn bị database
 
-## Bước 1: Deploy Gateway lên Cloudflare Workers
+Áp dụng toàn bộ migration trong `supabase/migrations` theo thứ tự tên file, từ `001_core.sql` đến `014_remove_unverified_context_values.sql`, sau đó chạy seed khi khởi tạo môi trường mới.
 
-### Cách 1: Chạy script tự động (Khuyên dùng)
-Double-click file `deploy-gateway.bat` tại thư mục gốc.
-Script sẽ tự hỏi bạn nhập từng secret.
+Không bỏ qua các migration financial hardening và account-centric console. Trước khi mở traffic thật, chạy các invariant trong `supabase/tests` trên môi trường được phép.
 
-### Cách 2: Chạy thủ công
-```bash
-cd apps/gateway
-npx wrangler login
-```
-Trình duyệt mở ra → Đăng nhập Cloudflare (tạo tài khoản free nếu chưa có).
+## 2. Cấu hình GitHub Actions
 
-Set secrets (nhập từng giá trị khi được hỏi):
+Repository cần các GitHub Actions secrets sau:
+
+| Secret | Mục đích |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Deploy Worker và quản lý custom domain |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account chứa zone `apivn.tech` |
+| `SUPABASE_ADMIN_SECRET` hoặc `SUPABASE_SECRET_KEY` hoặc `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase cho Web |
+| `GATEWAY_INTERNAL_TOKEN` | Xác thực Web -> Gateway cho Playground |
+| `GATEWAY_USER_ASSERTION_SECRET` | Ký user assertion giữa Web và Gateway |
+| `ADMIN_EMAILS` | Danh sách email admin |
+| `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | Bắt buộc đủ cả ba khi bật PayOS |
+| `PAYMENT_WEBHOOK_SECRET` | Chỉ dùng cho webhook legacy nếu còn cần |
+| `E2E_EMAIL`, `E2E_PASSWORD` | Tài khoản QA production chuyên dụng |
+| `E2E_API_KEY`, `E2E_FUNDED`, `E2E_MUTATING` | Bật các bài QA có gọi thật hoặc mutation khi chủ động cho phép |
+
+Repository variables được hỗ trợ:
+
+| Variable | Giá trị mặc định | Mục đích |
+|---|---|---|
+| `PRODUCTION_WEB_URL` | `https://apivn.tech` | URL Web cho E2E |
+| `PRODUCTION_GATEWAY_URL` | `https://api.apivn.tech` | URL Gateway cho E2E |
+| `PRODUCTION_BILLING_MODE` | `disabled` | Đặt `live` chỉ sau khi PayOS được duyệt và đủ ba secrets |
+| `CLOUDFLARE_WEB_URL` | `https://apivn.tech` | URL cho Cloudflare flow smoke |
+| `LEGACY_GATEWAY_ORIGIN_IP` | IP legacy trong workflow | Chỉ dùng khi dọn DNS cũ |
+
+Không commit secret vào `.env`, `.dev.vars`, workflow hoặc source code.
+
+## 3. Cấu hình Gateway Worker lần đầu
+
+Các Gateway secrets nằm trực tiếp trên Worker `ai-api-gateway`. Từ `apps/gateway`, cấu hình một lần bằng Wrangler:
+
 ```bash
 npx wrangler secret put SUPABASE_URL
-# Nhập Supabase Project URL của bạn
-
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-# Nhập Supabase Service Role Secret Key của bạn
-
 npx wrangler secret put A6API_BASE_URL
-# Nhập URL của A6API: https://api.a6api.com/v1
-
 npx wrangler secret put A6API_KEY
-# Nhập API key của A6API
-
-npx wrangler secret put NECO_BASE_URL
-# Nhập: (Enter trống nếu chưa dùng)
-
-npx wrangler secret put NECO_KEY
-# Nhập: (Enter trống nếu chưa dùng)
-
 npx wrangler secret put INTERNAL_ADMIN_TOKEN
-# Nhập mã token nội bộ giữa Gateway và Web
-
 npx wrangler secret put GATEWAY_USER_ASSERTION_SECRET
-# Secret riêng để Gateway xác thực user do Web chuyển tiếp cho playground
 ```
 
-Deploy:
+`INTERNAL_ADMIN_TOKEN` phải khớp `GATEWAY_INTERNAL_TOKEN` của Web. `GATEWAY_USER_ASSERTION_SECRET` phải giống nhau ở hai Worker và phải là secret riêng.
+
+Nếu `api.apivn.tech` còn trỏ tới origin cũ, chạy workflow `Prepare APIVN Worker Custom Domain`. Workflow chỉ xóa đúng DNS-only A record legacy đã khai báo, deploy Gateway và kiểm tra custom domain.
+
+Sau lần chuẩn bị đầu tiên, deploy Gateway bằng workflow `Deploy APIVN Gateway to Cloudflare` hoặc:
+
 ```bash
-npx wrangler deploy
+npm run typecheck --workspace @aiapi/gateway
+npm test --workspace @aiapi/gateway
+npm run deploy --workspace @aiapi/gateway
 ```
 
-> ✅ Sau khi deploy xong, bạn sẽ nhận được URL dạng:
-> `https://ai-api-gateway.YOUR_SUBDOMAIN.workers.dev`
-> **Copy URL này lại**, sẽ dùng ở Bước 2.
+## 4. Deploy Web Worker
 
----
+Push lên nhánh `cloudflare-migration` sẽ tự động chạy:
 
-## Bước 2: Deploy Web lên Vercel
+1. Typecheck và unit tests của Web.
+2. OpenNext build cho Cloudflare.
+3. Đồng bộ các Web secrets có mặt trên GitHub.
+4. Xác thực cấu hình Supabase, Gateway bridge và PayOS.
+5. Gắn commit SHA vào `/api/version`.
+6. Deploy Worker `apivn-web` lên `apivn.tech`.
 
-### 2.1. Push code lên GitHub
+Có thể chạy thủ công workflow `Deploy APIVN Web to Cloudflare` khi cần redeploy cùng commit.
+
+## 5. Bật hoặc khóa thanh toán
+
+Production mặc định fail-closed với `PRODUCTION_BILLING_MODE=disabled`. Ở chế độ này UI không tạo QR giả và không giả lập giao dịch thành công.
+
+Chỉ chuyển repository variable `PRODUCTION_BILLING_MODE` sang `live` khi:
+
+- PayOS đã duyệt tài khoản production.
+- Cả ba secrets `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` đã được cấu hình đúng.
+- Webhook production đã trỏ về endpoint của APIVN.
+- Một giao dịch giá trị nhỏ đã được đối soát end-to-end trên tài khoản test.
+
+Workflow sẽ từ chối bật `live` nếu thiếu bất kỳ PayOS secret nào.
+
+## 6. Xác minh sau deploy
+
+Các endpoint tối thiểu phải trả `200`:
+
 ```bash
-cd C:\Users\loi82\Downloads\apikeya
-git init
-git add .
-git commit -m "AI API Reseller V4 - Initial"
-```
-Tạo repo trên GitHub (public hoặc private), rồi:
-```bash
-git remote add origin https://github.com/YOUR_USERNAME/apikeya.git
-git branch -M main
-git push -u origin main
+curl https://apivn.tech/api/health
+curl https://apivn.tech/api/version
+curl https://api.apivn.tech/healthz
+curl https://api.apivn.tech/v1/models
 ```
 
-### 2.2. Import vào Vercel
-1. Vào [vercel.com/new](https://vercel.com/new) → Import Git Repository → Chọn repo `apikeya`.
-2. Giữ **Root Directory** ở thư mục gốc repository. `vercel.json` đã chỉ định build workspace `@aiapi/web` và output `apps/web/.next`.
-3. Tại mục **Environment Variables**, thêm các biến sau:
+`/api/version` phải chứa đúng `revision` bằng commit SHA vừa deploy. Workflow `Production E2E` chờ chính SHA này trước khi chạy Playwright, nên không thể báo xanh bằng cách kiểm tra nhầm bản deploy trước đó.
 
-| Key | Value (Lấy từ file config riêng của bạn) |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Anon Key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Service Role Key |
-| `NEXT_PUBLIC_GATEWAY_BASE_URL` | `https://ai-api-gateway.YOUR_SUBDOMAIN.workers.dev` ← URL từ Bước 1 |
-| `NEXT_PUBLIC_APP_URL` | `https://YOUR_PROJECT.vercel.app` ← Vercel sẽ cho URL sau khi deploy |
-| `GATEWAY_INTERNAL_TOKEN` | Token nội bộ bí mật |
-| `GATEWAY_USER_ASSERTION_SECRET` | Phải giống secret `GATEWAY_USER_ASSERTION_SECRET` trên Gateway |
-| `ADMIN_EMAILS` | Email admin của bạn (vd: loi822004@gmail.com) |
-| `A6API_KEY` | API key A6API dùng cho admin live balance/sync |
-| `PAYMENT_WEBHOOK_SECRET` | Secret dùng để tạo HMAC `sha256=<hex(raw body)>` cho webhook |
-| `ENABLE_SIGNUP_TRIAL_CREDIT` | Để `false` hoặc bỏ trống trong production. Chỉ bật `true` khi đã có chống abuse và muốn cấp credit signup. |
-| `DISABLE_EMAIL_CONFIRMATION` | Chỉ đặt `true` ở local/dev đã kiểm soát. Production phải bỏ trống để bắt buộc xác minh email. |
+Ở chế độ an toàn hiện tại, `/api/health` trả `paymentMode: "disabled"`. Khi chủ động bật billing, giá trị phải là `payos`.
 
-4. Nhấn **Deploy** → Đợi 1-2 phút.
+## 7. Hoàn tất migration khỏi Vercel
 
-> ✅ Sau khi deploy xong, bạn sẽ có URL dạng:
-> `https://apikeya.vercel.app` hoặc `https://apikeya-xxx.vercel.app`
+GitHub có thể vẫn nhận các commit status từ những Vercel project cũ dù Cloudflare đã deploy thành công. Sau khi xác nhận Cloudflare ổn định:
 
----
+1. Vào từng Vercel project cũ của repository `apikeya`.
+2. Gỡ Git integration hoặc archive project không còn dùng.
+3. Kiểm tra PR chỉ còn các Cloudflare/PR checks hiện hành.
+4. Chuyển PR khỏi Draft và merge vào `main` khi toàn bộ required checks xanh.
 
-## Bước 3: Cập nhật Supabase Auth cho Production
-
-Vào [Supabase Dashboard](https://supabase.com/dashboard/project/ycrqwekkafexqnlxpczd) → **Authentication** → **URL Configuration**:
-
-| Cài đặt | Giá trị |
-|---|---|
-| Site URL | `https://YOUR_PROJECT.vercel.app` |
-| Redirect URLs | `https://YOUR_PROJECT.vercel.app/**` |
-
-> ⚠️ Nếu không cập nhật Site URL, Supabase sẽ chặn login/signup trên production.
-
----
-
-## Bước 4: Kiểm Tra Hệ Thống Live
-
-1. Mở `https://YOUR_PROJECT.vercel.app` → Đăng ký tài khoản bằng `loi822004@gmail.com`.
-2. Vào Dashboard → Thử Playground.
-3. Kiểm tra Gateway: `https://ai-api-gateway.YOUR_SUBDOMAIN.workers.dev/healthz` → Phải trả về `{"ok":true}`.
-4. Kiểm tra API trực tiếp:
-```bash
-curl https://ai-api-gateway.YOUR_SUBDOMAIN.workers.dev/v1/models
-```
-
-### Kiểm tra chống lạm dụng trước khi mở public
-
-- Chạy migration `006_abuse_hardening.sql` để mỗi user chỉ có một đơn nạp pending.
-- Giữ `ENABLE_SIGNUP_TRIAL_CREDIT` tắt trong production; nếu bật, phải đặt rate limit signup/trial ở Vercel/Cloudflare hoặc một dịch vụ lưu trạng thái dùng chung.
-- Cấu hình rate limit theo IP, user và API key ở edge. Không dùng biến memory trong Next.js hoặc Worker làm rate limiter vì instance có thể scale độc lập.
-- Kiểm tra `Origin` của các mutation cookie-authenticated và giữ auth cookie ở `SameSite=Lax` hoặc chặt hơn.
-
----
-
-## Tóm Tắt Chi Phí
-
-| Dịch vụ | Gói | Chi phí |
-|---|---|---|
-| Supabase | Free tier | $0/tháng (500MB DB, 50k MAU) |
-| Vercel | Hobby | $0/tháng (100GB bandwidth) |
-| Cloudflare Workers | Free tier | $0/tháng (100k requests/ngày) |
-| **Tổng** | | **$0/tháng** |
-
-Khi traffic tăng, chỉ cần nâng gói Cloudflare Workers ($5/tháng cho 10M requests) và Vercel Pro ($20/tháng).
+Không bỏ qua branch protection hoặc push thẳng vào `main` chỉ để né status từ integration cũ.

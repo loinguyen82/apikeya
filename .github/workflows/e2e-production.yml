@@ -12,6 +12,8 @@ jobs:
     env:
       BASE_URL: ${{ vars.PRODUCTION_WEB_URL || 'https://apivn.tech' }}
       GATEWAY_URL: ${{ vars.PRODUCTION_GATEWAY_URL || 'https://api.apivn.tech' }}
+      EXPECTED_DEPLOY_SHA: ${{ github.sha }}
+      EXPECTED_PAYMENT_MODE: ${{ vars.PRODUCTION_BILLING_MODE == 'live' && 'payos' || 'disabled' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,13 +29,13 @@ jobs:
           for i in {1..48}; do
             version_body="$(curl -fsSL "$BASE_URL/api/version" 2>/dev/null || true)"
             health_body="$(curl -fsSL "$BASE_URL/api/health" 2>/dev/null || true)"
-            if echo "$version_body" | grep -q 'developer-console-v1' && echo "$health_body" | grep -q '"paymentMode":"disabled"'; then
-              echo "Developer Console revision is live at $BASE_URL"
+            if echo "$version_body" | grep -Fq "\"revision\":\"$EXPECTED_DEPLOY_SHA\"" && echo "$health_body" | grep -Fq "\"paymentMode\":\"$EXPECTED_PAYMENT_MODE\""; then
+              echo "Developer Console revision $EXPECTED_DEPLOY_SHA is live at $BASE_URL"
               exit 0
             fi
             sleep 10
           done
-          echo "Expected production revision did not become ready at $BASE_URL"
+          echo "Expected production revision $EXPECTED_DEPLOY_SHA did not become ready at $BASE_URL"
           exit 1
       - name: Run E2E
         env:

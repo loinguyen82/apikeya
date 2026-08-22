@@ -35,6 +35,10 @@ Web chạy tại `http://localhost:3000`; Gateway chạy tại `http://localhost
 
 `GATEWAY_INTERNAL_TOKEN` trên Web phải khớp `INTERNAL_ADMIN_TOKEN` trên Gateway. `GATEWAY_USER_ASSERTION_SECRET` là secret riêng, giống nhau ở hai ứng dụng.
 
+## Production
+
+Production hiện chạy hoàn toàn trên Cloudflare Workers: Web tại `https://apivn.tech` và Gateway tại `https://api.apivn.tech`. Xem [DEPLOY_LIVE.md](./DEPLOY_LIVE.md) để cấu hình secrets, custom domains, PayOS và quy trình GitHub Actions. Endpoint `/api/version` công bố commit SHA đang chạy để E2E chỉ kiểm tra đúng bản vừa deploy.
+
 ## Database
 
 Áp migration theo thứ tự trong `supabase/migrations`. Không bỏ qua các migration financial hardening (`011`) hoặc account-centric key system (`012+`). Database không lưu raw API Key; chỉ lưu `key_prefix`, SHA-256 hash và `last_four`.
