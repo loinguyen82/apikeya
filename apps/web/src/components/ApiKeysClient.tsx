@@ -1,8 +1,11 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { formatVietnamDateTime } from '@/lib/date'
 import { formatNumber } from '@/lib/money'
+
+const API_KEY_SESSION_STORAGE_KEY = 'apivn.portal.apiKey'
+const PUBLIC_BASE_URL = 'https://api.apivn.tech/v1'
 
 interface KeyItem {
   id: string
@@ -19,6 +22,10 @@ function maskedKey(key: KeyItem) {
   return `${key.prefix}-••••••••••••••••••••${key.last_four || '••••'}`
 }
 
+function matchesActiveKey(value: string, key: KeyItem) {
+  return value.startsWith(`${key.prefix}-`) && (!key.last_four || value.endsWith(key.last_four))
+}
+
 export function ApiKeysClient({ initialKey }: { initialKey: KeyItem | null }) {
   const [key, setKey] = useState<KeyItem | null>(initialKey)
   const [plaintext, setPlaintext] = useState<string | null>(null)
@@ -26,7 +33,29 @@ export function ApiKeysClient({ initialKey }: { initialKey: KeyItem | null }) {
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://api.apivn.tech'
+
+  useEffect(() => {
+    try {
+      if (!key) {
+        window.sessionStorage.removeItem(API_KEY_SESSION_STORAGE_KEY)
+        setPlaintext(null)
+        setShowSecret(false)
+        return
+      }
+
+      const stored = window.sessionStorage.getItem(API_KEY_SESSION_STORAGE_KEY)
+      if (stored && matchesActiveKey(stored, key)) {
+        setPlaintext(stored)
+      } else {
+        if (stored) window.sessionStorage.removeItem(API_KEY_SESSION_STORAGE_KEY)
+        setPlaintext(null)
+        setShowSecret(false)
+      }
+    } catch {
+      setPlaintext(null)
+      setShowSecret(false)
+    }
+  }, [key?.id, key?.prefix, key?.last_four])
 
   async function request(body: unknown, method: 'POST' | 'PATCH') {
     const response = await fetch('/api/keys', {
@@ -43,10 +72,18 @@ export function ApiKeysClient({ initialKey }: { initialKey: KeyItem | null }) {
     if (typeof result?.plaintext !== 'string' || !result?.key?.id) {
       throw new Error('Máy chủ không trả về secret mới')
     }
-    setKey({ ...result.key, request_count: requestCount })
+
+    const nextKey = { ...result.key, request_count: requestCount } as KeyItem
+    setKey(nextKey)
     setPlaintext(result.plaintext)
     setShowSecret(true)
     setCopied(false)
+
+    try {
+      window.sessionStorage.setItem(API_KEY_SESSION_STORAGE_KEY, result.plaintext)
+    } catch {
+      // React state still keeps the fresh secret visible on the current page.
+    }
   }
 
   async function createKey() {
@@ -79,16 +116,19 @@ export function ApiKeysClient({ initialKey }: { initialKey: KeyItem | null }) {
   }
 
   function toggleSecret() {
+    setErrorMsg(null)
     if (!plaintext) {
-      setErrorMsg('Full API Key không được lưu trên server. Key đầy đủ chỉ hiện ngay sau khi tạo hoặc reset; nếu đã mất key, hãy Reset API Key.')
+      setShowSecret(false)
+      setErrorMsg('Full API Key không còn trong phiên tab này. Hãy đăng nhập lại bằng API Key hiện tại, hoặc Reset API Key nếu bạn đã mất key.')
       return
     }
     setShowSecret((value) => !value)
   }
 
   async function copySecret() {
+    setErrorMsg(null)
     if (!plaintext) {
-      setErrorMsg('Không thể copy full key vì server chỉ lưu hash. Hãy Reset API Key nếu bạn không còn bản đã lưu.')
+      setErrorMsg('Không thể copy full key vì key không còn trong phiên hiện tại. Hãy đăng nhập lại bằng key hoặc Reset API Key.')
       return
     }
     try {
@@ -106,7 +146,7 @@ export function ApiKeysClient({ initialKey }: { initialKey: KeyItem | null }) {
         <div className="page-head-copy">
           <div className="eyebrow">API Key</div>
           <h1>Một key cho toàn bộ APIVN</h1>
-          <p>Mỗi tài khoản chỉ có một API Key đang hoạt động. Dùng cùng key này cho mọi model và công cụ.</p>
+          <p>Mỗi tài khoản chỉ có một Master API Key đang hoạt động. Dùng cùng key này để đăng nhập và gọi mọi model, công cụ.</p>
         </div>
         <span className={`status-chip ${key ? 'success' : ''}`}>{key ? '1 key · Active' : 'Chưa có key'}</span>
       </header>
@@ -152,12 +192,12 @@ export function ApiKeysClient({ initialKey }: { initialKey: KeyItem | null }) {
           </div>
 
           {plaintext ? (
-            <div className="notice warning" style={{ marginTop: 12 }}>
-              <strong>Lưu key ngay.</strong> Full key chỉ tồn tại trong phiên trang này; reload xong APIVN chỉ còn hash để xác minh.
+            <div className="notice" style={{ marginTop: 12 }}>
+              Full key đang được giữ tạm trong phiên tab này để bạn Hiện/Copy. APIVN vẫn chỉ lưu hash trên server và không lưu key vào localStorage.
             </div>
           ) : (
             <p className="field-hint" style={{ marginTop: 10 }}>
-              Vì lý do bảo mật, server không lưu plaintext. Sau khi rời màn hình tạo/reset, chỉ phần đầu và 4 ký tự cuối được hiển thị.
+              Server không lưu plaintext. Nếu phiên hiện tại không có full key, hãy đăng nhập lại bằng key hiện tại hoặc Reset API Key nếu bạn đã mất key.
             </p>
           )}
 
@@ -174,7 +214,7 @@ export function ApiKeysClient({ initialKey }: { initialKey: KeyItem | null }) {
 
           <div className="page-head" style={{ marginTop: 18, marginBottom: 0 }}>
             <div className="muted" style={{ fontSize: 11 }}>
-              Base URL: <code>{gatewayUrl}/v1</code>
+              Base URL: <code>{PUBLIC_BASE_URL}</code>
             </div>
             <button className="btn secondary" type="button" disabled={busy} onClick={resetKey}>
               {busy ? 'Đang reset…' : 'Reset API Key'}
