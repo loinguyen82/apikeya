@@ -6,6 +6,8 @@ import { hmacSha256Hex, sha256Hex } from '../utils/crypto.js'
 const BOT_USERNAME = 'Apivn_bot'
 const WEB_BASE_URL = 'https://apivn.tech'
 const INTERNAL_TOPUP_URL = `${WEB_BASE_URL}/api/internal/telegram/topups`
+const CREDIT_VND = 1_000
+const MIN_TOPUP_VND = 1_000
 
 const MAIN_KEYBOARD = {
   keyboard: [
@@ -18,32 +20,12 @@ const MAIN_KEYBOARD = {
   is_persistent: true,
 }
 
-const TOPUP_KEYBOARD = {
-  keyboard: [
-    ['10.000đ', '20.000đ', '50.000đ'],
-    ['100.000đ', '200.000đ'],
-    ['500.000đ', '1.000.000đ'],
-    ['⬅️ Menu'],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-}
-
-const TOPUP_AMOUNTS = new Map<string, number>([
-  ['10.000đ', 10_000],
-  ['20.000đ', 20_000],
-  ['50.000đ', 50_000],
-  ['100.000đ', 100_000],
-  ['200.000đ', 200_000],
-  ['500.000đ', 500_000],
-  ['1.000.000đ', 1_000_000],
-])
-
 type TelegramMessage = {
   message_id?: number
   text?: string
   chat?: { id?: number | string; type?: string }
   from?: { id?: number | string }
+  reply_to_message?: { text?: string }
 }
 
 type TelegramUpdate = { message?: TelegramMessage }
@@ -96,12 +78,7 @@ async function sendMessage(
   }
 }
 
-async function sendPhoto(
-  env: Env,
-  chatId: string,
-  photoUrl: string,
-  caption: string,
-): Promise<boolean> {
+async function sendPhoto(env: Env, chatId: string, photoUrl: string, caption: string): Promise<boolean> {
   const response = await telegramApi(env, 'sendPhoto', {
     chat_id: chatId,
     photo: photoUrl,
@@ -120,13 +97,21 @@ async function deleteMessage(env: Env, chatId: string, messageId?: number): Prom
   try {
     await telegramApi(env, 'deleteMessage', { chat_id: chatId, message_id: messageId })
   } catch {
-    // Best effort: never fail account linking because Telegram cannot delete the message.
+    // Best effort only.
   }
 }
 
 function formatVnd(value: bigint | number) {
   const amount = typeof value === 'bigint' ? Number(value) : value
   return `${new Intl.NumberFormat('vi-VN').format(amount)}đ`
+}
+
+function formatCreditFromVnd(value: bigint | number) {
+  const amount = typeof value === 'bigint' ? value : BigInt(value)
+  const whole = amount / BigInt(CREDIT_VND)
+  const remainder = amount % BigInt(CREDIT_VND)
+  if (remainder === 0n) return `${new Intl.NumberFormat('vi-VN').format(Number(whole))} Credit`
+  return `${(Number(amount) / CREDIT_VND).toLocaleString('vi-VN', { maximumFractionDigits: 3 })} Credit`
 }
 
 function microsToVnd(value: string | number | bigint | null | undefined) {
@@ -136,6 +121,25 @@ function microsToVnd(value: string | number | bigint | null | undefined) {
   } catch {
     return 0n
   }
+}
+
+function normalizeAmountText(text: string): number | null {
+  const trimmed = text.trim().toLowerCase()
+  const command = trimmed.match(/^\/nap(?:@\w+)?\s+(.+)$/i)
+  const raw = (command?.[1] ?? trimmed).trim()
+
+  let numeric: number
+  const kMatch = raw.match(/^(\d+(?:[.,]\d+)?)\s*k$/i)
+  if (kMatch) {
+    numeric = Number(kMatch[1].replace(',', '.')) * 1_000
+  } else {
+    const compact = raw.replace(/[. ,]/g, '')
+    if (!/^\d+$/.test(compact)) return null
+    numeric = Number(compact)
+  }
+
+  if (!Number.isSafeInteger(numeric) || numeric < MIN_TOPUP_VND || numeric % 1_000 !== 0) return null
+  return numeric
 }
 
 async function getLink(env: Env, telegramUserId: string): Promise<TelegramLink | null> {
@@ -215,14 +219,29 @@ async function showMainMenu(env: Env, chatId: string, telegramUserId: string) {
   )
 }
 
-async function showTopupMenu(env: Env, chatId: string, telegramUserId: string) {
+async function askTopupAmount(env: Env, chatId: string, telegramUserId: string) {
   const link = await requireLink(env, telegramUserId, chatId)
   if (!link) return
   await sendMessage(
     env,
     chatId,
-    '💰 Chọn số tiền muốn nạp.\n\n• Tối thiểu: 1.000đ\n• 200k: +2%\n• 500k: +5%\n• 1 triệu: +8%\n• Đơn VietQR hết hạn sau 30 phút.',
-    TOPUP_KEYBOARD,
+    [
+      '💰 Nhập số tiền muốn nạp (VNĐ)',
+      '',
+      '1 Credit = 1.000đ',
+      'Ví dụ: 50000 → 50 Credit',
+      '',
+      '• Tối thiểu: 1.000đ',
+      '• Số tiền phải là bội của 1.000đ',
+      '• 200k: +2% bonus',
+      '• 500k: +5% bonus',
+      '• 1 triệu: +8% bonus',
+    ].join('\n'),
+    {
+      force_reply: true,
+      input_field_placeholder: 'Ví dụ: 50000',
+      selective: true,
+    },
   )
 }
 
@@ -241,12 +260,17 @@ async function showBalance(env: Env, chatId: string, telegramUserId: string) {
     return
   }
 
-  const available = microsToVnd(data.available_micros)
-  const reserved = microsToVnd(data.reserved_micros)
+  const availableVnd = microsToVnd(data.available_micros)
+  const reservedVnd = microsToVnd(data.reserved_micros)
   await sendMessage(
     env,
     chatId,
-    `💳 Số dư APIVN\n\nKhả dụng: ${formatVnd(available)}\nĐang giữ: ${formatVnd(reserved)}`,
+    [
+      '💳 Số dư APIVN',
+      '',
+      `Khả dụng: ${formatCreditFromVnd(availableVnd)} (${formatVnd(availableVnd)})`,
+      `Đang giữ: ${formatCreditFromVnd(reservedVnd)} (${formatVnd(reservedVnd)})`,
+    ].join('\n'),
     MAIN_KEYBOARD,
   )
 }
@@ -254,11 +278,15 @@ async function showBalance(env: Env, chatId: string, telegramUserId: string) {
 function topupCaption(body: TopupResponse, fallbackAmount: number): string {
   const amount = body.amount ?? fallbackAmount
   const bonus = body.bonus ?? 0
+  const totalVnd = amount + bonus
   return [
     '💰 Đơn nạp APIVN',
     '',
     `Số tiền: ${formatVnd(amount)}`,
-    ...(bonus > 0 ? [`🎁 Bonus: +${formatVnd(bonus)}`] : []),
+    `Quy đổi: ${formatCreditFromVnd(amount)}`,
+    ...(bonus > 0 ? [`🎁 Bonus: +${formatCreditFromVnd(bonus)} (+${formatVnd(bonus)})`] : []),
+    `✅ Credit nhận: ${formatCreditFromVnd(totalVnd)}`,
+    '',
     body.bankName ? `Ngân hàng: ${body.bankName}` : '',
     body.accountNo ? `Số tài khoản: ${body.accountNo}` : '',
     body.accountName ? `Chủ tài khoản: ${body.accountName}` : '',
@@ -277,9 +305,7 @@ async function showVietQrTopup(
   const caption = topupCaption(body, fallbackAmount)
   if (body.qrUrl) {
     const sent = await sendPhoto(env, chatId, body.qrUrl, caption)
-    if (!sent) {
-      await sendMessage(env, chatId, `${caption}\n\nQR: ${body.qrUrl}`)
-    }
+    if (!sent) await sendMessage(env, chatId, `${caption}\n\nQR: ${body.qrUrl}`)
   } else {
     await sendMessage(env, chatId, caption)
   }
@@ -328,7 +354,9 @@ async function createTopup(env: Env, chatId: string, telegramUserId: string, amo
   if (!response.ok || !body?.ok || !body.qrUrl) {
     const message = body?.error === 'ACTIVE_TOPUP_EXISTS'
       ? '⏳ Bạn đang có một đơn nạp chưa hết hạn. Bấm “🔄 Kiểm tra nạp” hoặc chờ đơn cũ hết hạn.'
-      : '❌ Không thể tạo đơn VietQR. Vui lòng thử lại.'
+      : body?.error === 'INVALID_AMOUNT'
+        ? '❌ Số tiền phải từ 1.000đ và là bội của 1.000đ.'
+        : '❌ Không thể tạo đơn VietQR. Vui lòng thử lại.'
     await sendMessage(env, chatId, message, MAIN_KEYBOARD)
     return
   }
@@ -364,6 +392,9 @@ async function checkLatestTopup(env: Env, chatId: string, telegramUserId: string
     status = 'expired'
   }
 
+  const amount = Number(data.payable_vnd ?? 0)
+  const bonusVnd = microsToVnd(data.bonus_micros)
+  const totalVnd = BigInt(amount) + bonusVnd
   const statusText = status === 'paid'
     ? '✅ ĐÃ THANH TOÁN'
     : status === 'pending'
@@ -378,24 +409,16 @@ async function checkLatestTopup(env: Env, chatId: string, telegramUserId: string
     '🔄 Đơn nạp gần nhất',
     '',
     `Trạng thái: ${statusText}`,
-    `Số tiền: ${formatVnd(Number(data.payable_vnd ?? 0))}`,
-    `Bonus: ${formatVnd(microsToVnd(data.bonus_micros))}`,
+    `Số tiền: ${formatVnd(amount)}`,
+    `Quy đổi: ${formatCreditFromVnd(amount)}`,
+    ...(bonusVnd > 0n ? [`Bonus: +${formatCreditFromVnd(bonusVnd)}`] : []),
+    `Credit nhận: ${formatCreditFromVnd(totalVnd)}`,
   ].join('\n'), MAIN_KEYBOARD)
 }
 
 async function unlinkAccount(env: Env, chatId: string, telegramUserId: string) {
   await adminDb(env).from('telegram_account_links').delete().eq('telegram_user_id', telegramUserId)
   await sendMessage(env, chatId, '🚪 Đã huỷ liên kết Telegram với tài khoản APIVN.', MAIN_KEYBOARD)
-}
-
-function parseTopupAmount(text: string): number | null {
-  const preset = TOPUP_AMOUNTS.get(text)
-  if (preset) return preset
-  const command = text.match(/^\/nap(?:@\w+)?\s+(\d{3,9})$/i)
-  if (!command) return null
-  const amount = Number(command[1])
-  if (!Number.isSafeInteger(amount) || amount < 1000 || amount % 1000 !== 0) return null
-  return amount
 }
 
 export async function handlePrivateTelegramUpdate(env: Env, update: TelegramUpdate): Promise<boolean> {
@@ -409,7 +432,7 @@ export async function handlePrivateTelegramUpdate(env: Env, update: TelegramUpda
 
   if (text.startsWith('/start') || text === '/menu' || text === '⬅️ Menu') {
     if (/^\/start(?:@\w+)?\s+topup$/i.test(text)) {
-      await showTopupMenu(env, chatId, telegramUserId)
+      await askTopupAmount(env, chatId, telegramUserId)
     } else {
       await showMainMenu(env, chatId, telegramUserId)
     }
@@ -422,9 +445,7 @@ export async function handlePrivateTelegramUpdate(env: Env, update: TelegramUpda
     await sendMessage(
       env,
       chatId,
-      result.ok
-        ? '✅ Liên kết API key thành công. Bot không lưu plaintext key.'
-        : `❌ ${result.message}`,
+      result.ok ? '✅ Liên kết API key thành công. Bot không lưu plaintext key.' : `❌ ${result.message}`,
       MAIN_KEYBOARD,
     )
     return true
@@ -441,13 +462,23 @@ export async function handlePrivateTelegramUpdate(env: Env, update: TelegramUpda
   }
 
   if (text === '💰 Nạp tiền' || text === '/nap') {
-    await showTopupMenu(env, chatId, telegramUserId)
+    await askTopupAmount(env, chatId, telegramUserId)
     return true
   }
 
-  const amount = parseTopupAmount(text)
+  const amount = normalizeAmountText(text)
   if (amount != null) {
     await createTopup(env, chatId, telegramUserId, amount)
+    return true
+  }
+
+  if (/^\d[\d., ]*k?$/i.test(text)) {
+    await sendMessage(
+      env,
+      chatId,
+      '❌ Số tiền không hợp lệ. Tối thiểu 1.000đ và phải là bội của 1.000đ.\nVí dụ: 50000 → 50 Credit.',
+      MAIN_KEYBOARD,
+    )
     return true
   }
 
