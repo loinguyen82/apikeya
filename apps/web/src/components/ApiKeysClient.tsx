@@ -14,7 +14,7 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
   const [copyError, setCopyError] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://ai-api-gateway.loi822004.workers.dev'
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://api.apivn.tech'
   const activeKey = keys.find((key) => key.status === 'active')
 
   async function handleCreateKey(e: React.FormEvent) {

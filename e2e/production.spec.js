@@ -14,42 +14,44 @@ async function login(page) {
     await page.getByLabel('API key').fill(e2eApiKey)
     await page.getByRole('button', { name: 'Vào Dashboard' }).click()
   } else {
-    await page.getByRole('button', { name: /Tài khoản cũ chưa có key/i }).click()
+    await page.getByRole('button', { name: 'Đăng nhập bằng email' }).click()
     await page.getByLabel('Email').fill(e2eEmail)
     await page.getByLabel('Mật khẩu').fill(e2ePassword)
-    await page.getByRole('button', { name: 'Đăng nhập cũ' }).click()
+    await page.getByRole('button', { name: 'Tiếp tục bằng email' }).click()
   }
   await page.waitForURL(/\/dashboard/, { timeout: 30000 })
 }
 
 async function legacyLogin(page) {
   await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' })
-  await page.getByRole('button', { name: /Tài khoản cũ chưa có key/i }).click()
+  await page.getByRole('button', { name: 'Đăng nhập bằng email' }).click()
   await page.getByLabel('Email').fill(e2eEmail)
   await page.getByLabel('Mật khẩu').fill(e2ePassword)
-  await page.getByRole('button', { name: 'Đăng nhập cũ' }).click()
+  await page.getByRole('button', { name: 'Tiếp tục bằng email' }).click()
   await page.waitForURL(/\/dashboard/, { timeout: 30000 })
 }
 
-test.describe('Apikeya production public contract', () => {
-  test('deployed revision matches the current 1k/payOS contract', async ({ request }) => {
+test.describe('APIVN production public contract', () => {
+  test('deployed revision matches the Tide UI and mock billing contract', async ({ request }) => {
     const res = await request.get(`${baseURL}/api/version`)
     expect(res.status()).toBe(200)
     const body = await res.json()
     expect(body?.service).toBe('apivn-web')
-    expect(body?.version).toBe('payos-1k-v1')
+    expect(body?.version).toBe('tide-mock-v1')
+    const healthRes = await request.get(`${baseURL}/api/health`)
+    expect(healthRes.status()).toBe(200)
+    expect((await healthRes.json())?.paymentMode).toBe('mock')
   })
 
   test('landing, pricing, docs and key-first auth pages render', async ({ page }) => {
     await page.goto(baseURL, { waitUntil: 'networkidle' })
-    await expect(page.getByText('Apikeya').first()).toBeVisible()
-    await expect(page.getByRole('heading', { name: /một api cho nhiều model/i })).toBeVisible()
-    await expect(page.getByText('150đ / 1M')).toBeVisible()
-    await expect(page.getByText('600đ / 1M')).toBeVisible()
-    await expect(page.getByText('2.500đ / 1M')).toBeVisible()
+    await expect(page.getByLabel('APIVN.tech').first()).toBeVisible()
+    await expect(page.getByRole('heading', { name: /một api key/i })).toBeVisible()
+    await expect(page.getByText('Claude Sonnet')).toBeVisible()
+    await expect(page.getByText('DeepSeek', { exact: true }).first()).toBeVisible()
     await expect(page.locator('body')).not.toContainText('🥕')
-    await expect(page.locator('body')).toContainText('OPENAI_API_KEY=sk-...')
-    await expect(page.locator('body')).toContainText('1 user · 1 key active')
+    await expect(page.locator('body')).toContainText(`${gatewayURL}/v1`)
+    await expect(page.locator('body')).toContainText('Một key cho mọi model')
 
     await page.goto(`${baseURL}/docs`, { waitUntil: 'networkidle' })
     await expect(page.getByRole('heading', { name: /tích hợp bằng api chuẩn openai/i })).toBeVisible()
@@ -57,12 +59,12 @@ test.describe('Apikeya production public contract', () => {
     await expect(page.locator('body')).not.toContainText('$https://')
 
     await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' })
-    await expect(page.getByRole('heading', { name: /đăng nhập bằng api key/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /đăng nhập apivn/i })).toBeVisible()
     await expect(page.getByLabel('API key')).toBeVisible()
 
     await page.goto(`${baseURL}/signup`, { waitUntil: 'networkidle' })
-    await expect(page.getByRole('heading', { name: /nhận api key/i })).toBeVisible()
-    await expect(page.locator('body')).toContainText('Không cần xác minh email')
+    await expect(page.getByRole('heading', { name: /tạo tài khoản apivn/i })).toBeVisible()
+    await expect(page.locator('body')).toContainText('Checkout tạm thời mô phỏng')
   })
 
   test('invalid API key is rejected', async ({ request }) => {
@@ -95,12 +97,12 @@ test.describe('Apikeya production public contract', () => {
   })
 })
 
-test.describe('Apikeya authenticated journey', () => {
+test.describe('APIVN authenticated journey', () => {
   test.skip(!e2eApiKey && (!e2eEmail || !e2ePassword), 'Set E2E_API_KEY or legacy E2E_EMAIL/E2E_PASSWORD to run authenticated E2E.')
 
   test('API-key login and all customer surfaces render', async ({ page }) => {
     await login(page)
-    for (const path of ['/dashboard', '/dashboard/billing', '/dashboard/playground', '/dashboard/models', '/dashboard/api-keys', '/dashboard/usage']) {
+    for (const path of ['/dashboard', '/dashboard/billing', '/dashboard/account', '/dashboard/config', '/dashboard/playground', '/dashboard/models', '/dashboard/api-keys', '/dashboard/usage', '/dashboard/notifications']) {
       await page.goto(`${baseURL}${path}`, { waitUntil: 'networkidle' })
       await expect(page).toHaveURL(new RegExp(path.replaceAll('/', '\\/')))
       await expect(page.locator('body')).not.toContainText('Application error')
@@ -108,12 +110,13 @@ test.describe('Apikeya authenticated journey', () => {
     }
   })
 
-  test('billing exposes the 1k entry package', async ({ page }) => {
+  test('billing exposes the safe 1k mock checkout', async ({ page }) => {
     await login(page)
     await page.goto(`${baseURL}/dashboard/billing`, { waitUntil: 'networkidle' })
-    await expect(page.getByRole('heading', { name: /nạp số dư bằng vietqr/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^nạp số dư$/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /1\.000/ }).first()).toBeVisible()
-    await expect(page.locator('body')).toContainText('Nạp từ 1.000đ')
+    await expect(page.locator('body')).toContainText('Chưa kết nối PayOS')
+    await expect(page.locator('body')).toContainText('không phát webhook')
   })
 
   test('optional key rotation exposes one new secret and revokes the prior key', async ({ page }) => {
@@ -128,25 +131,43 @@ test.describe('Apikeya authenticated journey', () => {
     await expect(page.getByText('1 active')).toBeVisible()
   })
 
-  test('optional topup mutation creates a 1k payment request', async ({ page }) => {
-    test.skip(!allowMutations, 'Set E2E_MUTATING=true only for a dedicated test account.')
+  test('mock checkout completes without leaving billing or changing wallet text', async ({ page }) => {
     await login(page)
     await page.goto(`${baseURL}/dashboard/billing`, { waitUntil: 'networkidle' })
+    const walletBefore = await page.locator('.wallet-card .balance').textContent()
     await page.getByRole('button', { name: /1\.000/ }).first().click()
-    await page.getByRole('button', { name: /Thanh toán.*1\.000/i }).click()
+    await page.getByLabel('Xác nhận điều kiện demo').check()
+    await page.getByRole('button', { name: /Tạo thanh toán mô phỏng.*1\.000/i }).click()
+    await expect(page.getByText('pending_mock', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Mã QR mô phỏng, không chứa thông tin ngân hàng thật')).toBeVisible()
+    await page.getByRole('button', { name: 'Mô phỏng đã thanh toán' }).click()
+    await expect(page.getByText('demo_completed', { exact: true })).toBeVisible()
+    await expect(page.getByText(/Số dư thật không thay đổi/)).toBeVisible()
+    await expect(page.locator('.wallet-card .balance')).toHaveText(walletBefore || '')
+    await expect(page).toHaveURL(`${baseURL}/dashboard/billing`)
+  })
 
-    await page.waitForLoadState('domcontentloaded')
-    const currentUrl = new URL(page.url())
-    const appHost = new URL(baseURL).host
+  test('mock checkout can be cancelled without changing wallet text', async ({ page }) => {
+    await login(page)
+    await page.goto(`${baseURL}/dashboard/billing`, { waitUntil: 'networkidle' })
+    const walletBefore = await page.locator('.wallet-card .balance').textContent()
+    await page.getByLabel('Xác nhận điều kiện demo').check()
+    await page.getByRole('button', { name: /Tạo thanh toán mô phỏng.*1\.000/i }).click()
+    await page.getByRole('button', { name: 'Huỷ demo' }).click()
+    await expect(page.getByText('cancelled', { exact: true })).toBeVisible()
+    await expect(page.locator('.wallet-card .balance')).toHaveText(walletBefore || '')
+  })
 
-    if (currentUrl.host === appHost) {
-      await expect(page).toHaveURL(/\/dashboard\/billing\?topup=/)
-      await expect(page.getByAltText('Mã VietQR nạp tiền')).toBeVisible()
-      await expect(page.locator('body')).toContainText('Nội dung bắt buộc')
-    } else {
-      expect(currentUrl.protocol).toBe('https:')
-      expect(currentUrl.host).not.toBe(appHost)
-    }
+  test('authenticated topup API remains disabled in mock mode', async ({ page }) => {
+    await login(page)
+    const result = await page.evaluate(async () => {
+      const body = new FormData()
+      body.set('amount', '1000')
+      const response = await fetch('/api/topups', { method: 'POST', body })
+      return { status: response.status, body: await response.json() }
+    })
+    expect(result.status).toBe(503)
+    expect(result.body?.code).toBe('BILLING_MOCK_ONLY')
   })
 
   test('optional funded flow returns real Playground and gateway responses', async ({ page, request }) => {

@@ -18,6 +18,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck web
         run: npm run typecheck --workspace @aiapi/web
+      - name: Test web
+        run: npm test --workspace @aiapi/web
       - name: Typecheck gateway
         run: npm run typecheck --workspace @aiapi/gateway
       - name: Test gateway

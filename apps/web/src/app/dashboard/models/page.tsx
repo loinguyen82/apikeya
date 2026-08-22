@@ -36,12 +36,12 @@ export default async function ModelsPage() {
       <section className="surface model-table-shell">
         <div className="surface-head">
           <h2>{models?.length ?? 0} model khả dụng</h2>
-          <span className="status-chip success"><span className="status-dot" /> Đã cấu hình trên gateway</span>
+          <span className="status-chip"><span className="status-dot" /> Dữ liệu từ model catalog</span>
         </div>
         {(models ?? []).length > 0 ? (
           <div className="table-scroll">
             <table className="data-table">
-              <thead><tr><th>Model</th><th>Provider</th><th>Giá / 1M token</th><th>Streaming</th><th></th></tr></thead>
+              <thead><tr><th>Model</th><th>Provider</th><th>Trạng thái</th><th>Giá / 1M token</th><th>Streaming</th><th></th></tr></thead>
               <tbody>
                 {(models ?? []).map((m: any) => {
                   const provider = providerName(m.id, m.display_name)
@@ -54,6 +54,7 @@ export default async function ModelsPage() {
                         </div>
                       </td>
                       <td>{provider}</td>
+                      <td><span className={`status-chip ${m.status === 'active' ? 'success' : 'warning'}`}>{m.status === 'active' ? 'Online' : 'Suy giảm'}</span></td>
                       <td>
                         {m.pricing_mode === 'flat_total' ? (
                           <><div className="price-main">{formatVndFromMicros(m.retail_flat_micros_per_mtoken)}</div><div className="price-sub">{formatCreditRateFromMicros(m.retail_flat_micros_per_mtoken)} / 1M</div></>

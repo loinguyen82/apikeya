@@ -1,118 +1,122 @@
 import Link from 'next/link'
+import { BrandLogo } from '@/components/BrandLogo'
+import { CopyButton } from '@/components/CopyButton'
 
 const models = [
-  { name: 'Kimi K2.6', price: '150đ / 1M', credit: '0,15 Credit', purpose: 'Code, chat dài, automation' },
-  { name: 'DeepSeek V4', price: '300đ / 1M', credit: '0,3 Credit', purpose: 'Reasoning và code tiết kiệm' },
-  { name: 'GPT-5.6 Luna', price: '600đ / 1M', credit: '0,6 Credit', purpose: 'Sáng tạo, coding và tác vụ thường ngày' },
-  { name: 'Claude Sonnet 5', price: '750đ / 1M', credit: '0,75 Credit', purpose: 'Lập trình và phân tích sâu' },
-  { name: 'GPT-5.6 Terra', price: '1.500đ / 1M', credit: '1,5 Credit', purpose: 'Đa năng, cân bằng' },
-  { name: 'GPT-5.6 Sol', price: '2.500đ / 1M', credit: '2,5 Credit', purpose: 'Reasoning kỹ thuật khó' },
+  { name: 'Claude Sonnet', provider: 'Anthropic', purpose: 'Code và phân tích sâu' },
+  { name: 'GPT', provider: 'OpenAI', purpose: 'Reasoning và tác vụ đa năng' },
+  { name: 'Kimi', provider: 'Moonshot', purpose: 'Ngữ cảnh dài và automation' },
+  { name: 'DeepSeek', provider: 'DeepSeek', purpose: 'Code và reasoning tiết kiệm' },
 ]
 
-const providers = [
-  ['OpenAI', 'GPT'],
-  ['Anthropic', 'Claude'],
-  ['Kimi', 'Moonshot'],
-  ['DeepSeek', 'DeepSeek'],
-]
+function buildCurlExample(gatewayUrl: string) {
+  return `curl ${gatewayUrl}/v1/chat/completions \\
+  -H "Authorization: Bearer sk-..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gpt-5.6-luna",
+    "messages": [{"role":"user","content":"Xin chào"}]
+  }'`
+}
 
 export default function HomePage() {
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://api.apivn.tech'
+  const curlExample = buildCurlExample(gatewayUrl)
   return (
     <>
-      <header className="topbar">
-        <div className="container row">
-          <Link href="/" className="landing-brand" aria-label="Apikeya home">
-            <span className="brand-mark">A</span>
-            <span>Apikeya</span>
-          </Link>
-
-          <div className="row" style={{ gap: '10px' }}>
-            <a href="#pricing" className="btn secondary" style={{ border: 'none' }}>Bảng giá</a>
-            <Link href="/docs" className="btn secondary" style={{ border: 'none' }}>Tài liệu</Link>
-            <Link href="/login" className="btn secondary">Đăng nhập bằng key</Link>
+      <header className="public-header">
+        <div className="public-header-inner">
+          <BrandLogo />
+          <nav className="public-nav" aria-label="Điều hướng chính">
+            <a href="#flow">Cách hoạt động</a>
+            <a href="#models">Models</a>
+            <a href="#billing">Thanh toán</a>
+            <Link href="/docs">Tài liệu</Link>
+          </nav>
+          <div className="public-actions">
+            <Link href="/login" className="btn secondary">Đăng nhập</Link>
             <Link href="/signup" className="btn">Bắt đầu</Link>
           </div>
         </div>
       </header>
 
-      <main>
-        <section className="container hero-refresh">
-          <div className="hero-copy">
-            <div className="hero-eyebrow">API gateway cho developer Việt Nam</div>
-            <h1>Một API cho nhiều model. Một key cho cả API và Dashboard.</h1>
-            <p className="muted">
-              Tạo tài khoản không cần xác minh email, nạp bằng VNĐ rồi nhận API key. Sau đó dùng Claude, GPT, Kimi và DeepSeek qua một Base URL và đăng nhập Dashboard bằng chính key đó.
+      <main className="landing-main">
+        <section className="landing-hero">
+          <div className="landing-hero-copy">
+            <h1>Một API key.<br /><span>Mọi model bạn cần.</span></h1>
+            <p>
+              Giữ nguyên SDK quen thuộc, đổi một Base URL và dùng Claude, GPT, Kimi hoặc DeepSeek ngay trong cùng một developer console.
             </p>
-
-            <div className="hero-actions">
-              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Bắt đầu từ 1.000đ</Link>
-              <a href="#pricing" className="btn secondary" style={{ padding: '12px 20px' }}>Xem bảng giá</a>
+            <div className="landing-hero-actions">
+              <Link href="/signup" className="btn">Tạo tài khoản miễn phí →</Link>
+              <Link href="/docs" className="btn secondary">Xem tài liệu</Link>
             </div>
-
-            <div className="hero-proof" aria-label="Điểm nổi bật">
-              <span>Nạp từ 1.000đ</span>
-              <span>0 Credit miễn phí</span>
-              <span>Nạp xong mới mở key</span>
-              <span>1 user · 1 key active</span>
-            </div>
-          </div>
-
-          <div className="quickstart-card" aria-label="Quick start">
-            <div className="quickstart-head">
-              <strong>Quick start</strong>
+            <div className="landing-trust" aria-label="Điểm nổi bật">
+              <span>Một key cho mọi model</span>
               <span>OpenAI-compatible</span>
+              <span>Logs và chi phí rõ ràng</span>
             </div>
-            <div className="code-panel">{`export OPENAI_BASE_URL=https://api.apivn.tech/v1\nexport OPENAI_API_KEY=sk-...\n\ncodex --model gpt-5.6-luna`}</div>
-            <div className="gateway-status">
-              <div>
-                <strong>Key cũng là credential Dashboard</strong>
-                <div className="muted" style={{ fontSize: '12px' }}>Rotate key không reset số dư hay quota</div>
+          </div>
+
+          <div className="hero-console" aria-label="Ví dụ gọi API">
+            <div className="hero-console-bar">
+              <span className="hero-console-dots"><i /><i /><i /></span>
+              <span>request.sh</span>
+              <span>cURL</span>
+            </div>
+            <pre className="hero-console-code"><code>{curlExample}</code></pre>
+            <div className="endpoint-strip">
+              <code>{gatewayUrl}/v1</code>
+              <CopyButton value={`${gatewayUrl}/v1`} compact />
+            </div>
+          </div>
+        </section>
+
+        <section id="flow" className="landing-section">
+          <div className="section-intro">
+            <h2>Từ đăng ký đến request đầu tiên theo một flow rõ ràng.</h2>
+            <p>Account, billing, API key, model, cấu hình và usage nối liền trong cùng một developer journey.</p>
+          </div>
+          <div className="flow-rail">
+            <article className="flow-step"><small>01 / ACCOUNT</small><h3>Tạo tài khoản</h3><p>Đăng ký để mở console và quản lý toàn bộ workflow.</p></article>
+            <article className="flow-step"><small>02 / BILLING</small><h3>Nạp số dư</h3><p>Hiện là checkout mô phỏng; PayOS sẽ được nối vào đúng bước này.</p></article>
+            <article className="flow-step"><small>03 / API KEY</small><h3>Tạo key & cấu hình</h3><p>Secret chỉ hiện một lần, config được sinh sẵn theo công cụ.</p></article>
+            <article className="flow-step"><small>04 / REQUEST</small><h3>Gọi API & xem logs</h3><p>Test model, gửi request thật và theo dõi token cùng chi phí.</p></article>
+          </div>
+        </section>
+
+        <section id="models" className="landing-section">
+          <div className="section-intro">
+            <h2>Một endpoint, nhiều dòng model.</h2>
+            <p>Danh sách trong console lấy từ gateway thực tế; trạng thái và giá luôn được hiển thị tại nơi bạn sử dụng.</p>
+          </div>
+          <div className="public-models">
+            {models.map((model) => (
+              <div className="public-model-row" key={model.name}>
+                <strong>{model.name}</strong>
+                <span>{model.purpose}</span>
+                <span>{model.provider}</span>
+                <span className="model-compat">API compatible</span>
               </div>
-              <span className="badge">6 model đã cấu hình</span>
-            </div>
+            ))}
           </div>
         </section>
 
-        <section className="container provider-strip" aria-label="Nhà cung cấp hỗ trợ">
-          {providers.map(([name, family]) => (
-            <div className="provider-chip" key={name}>
-              <strong>{name}</strong>
-              <span>{family}</span>
-            </div>
-          ))}
-        </section>
-
-        <section id="pricing" className="container" style={{ padding: '34px 20px 88px' }}>
-          <div className="section-heading">
+        <section id="billing" className="landing-section">
+          <div className="landing-cta">
             <div>
-              <h2 style={{ fontSize: '28px', letterSpacing: '-0.03em' }}>Bảng giá model</h2>
-              <p className="muted" style={{ marginTop: '6px' }}>Flat total: tổng input + output token × đơn giá. 1 Credit = 1.000đ.</p>
+              <h2>Dùng bao nhiêu, trả bấy nhiêu.</h2>
+              <p>Nạp tiền đang ở chế độ mô phỏng trong lúc kết nối PayOS. Demo không cộng số dư thật.</p>
             </div>
-            <Link href="/docs" className="btn secondary">Xem cách tích hợp</Link>
-          </div>
-
-          <div className="pricing-shell">
-            <table className="pricing-table">
-              <thead><tr><th>Model</th><th>Phù hợp</th><th>Giá / 1M token</th><th></th></tr></thead>
-              <tbody>
-                {models.map((model) => (
-                  <tr key={model.name}>
-                    <td><div className="model-name"><span className="model-dot" /><strong>{model.name}</strong></div></td>
-                    <td className="model-purpose">{model.purpose}</td>
-                    <td><strong>{model.price}</strong><div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{model.credit}</div></td>
-                    <td style={{ textAlign: 'right' }}><Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Bắt đầu →</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Link href="/signup" className="btn">Mở developer console</Link>
           </div>
         </section>
       </main>
 
-      <footer style={{ borderTop: '1px solid var(--refresh-line)', padding: '28px 0 38px', background: '#fff' }}>
-        <div className="container row">
-          <div className="landing-brand"><span className="brand-mark">A</span><span>Apikeya</span></div>
-          <p className="muted" style={{ fontSize: '13px' }}>API gateway · thanh toán VNĐ · dành cho developer Việt Nam</p>
+      <footer className="public-footer">
+        <div className="public-footer-inner">
+          <BrandLogo />
+          <span>API gateway dành cho developer Việt Nam · APIVN.tech</span>
         </div>
       </footer>
     </>

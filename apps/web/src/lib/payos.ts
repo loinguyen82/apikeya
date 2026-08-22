@@ -1,4 +1,5 @@
 const PAYOS_API_BASE = 'https://api-merchant.payos.vn'
+const PAYOS_REQUEST_TIMEOUT_MS = 15_000
 
 type PayOSCredentials = {
   clientId: string
@@ -18,8 +19,15 @@ export type PayOSWebhookPayload = {
     currency?: string
     paymentLinkId?: string
     code?: string
+    desc?: string
   }
   signature?: string
+}
+
+type PayOSPaymentLinkData = Record<string, unknown> & {
+  checkoutUrl?: string
+  paymentLinkId?: string
+  qrCode?: string
 }
 
 function getCredentials(): PayOSCredentials | null {
@@ -51,6 +59,16 @@ async function hmacSha256Hex(secret: string, value: string) {
   return toHex(new Uint8Array(digest))
 }
 
+function hexToBytes(value: string): Uint8Array<ArrayBuffer> | null {
+  if (!/^[0-9a-f]{64}$/i.test(value)) return null
+
+  const bytes = new Uint8Array(value.length / 2)
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
+  }
+  return bytes
+}
+
 function normalizeSignatureValue(value: unknown): string {
   if (value === null || value === undefined || value === 'null' || value === 'undefined') return ''
   if (Array.isArray(value)) {
@@ -69,25 +87,45 @@ function normalizeSignatureValue(value: unknown): string {
   return String(value)
 }
 
-async function signSortedObject(checksumKey: string, data: Record<string, unknown>) {
-  const serialized = Object.keys(data)
+function serializeSortedObject(data: Record<string, unknown>) {
+  return Object.keys(data)
     .sort()
     .filter((key) => data[key] !== undefined)
     .map((key) => `${key}=${normalizeSignatureValue(data[key])}`)
     .join('&')
-
-  return hmacSha256Hex(checksumKey, serialized)
 }
 
-function safeSignatureEqual(left: string, right: string) {
-  const a = left.toLowerCase()
-  const b = right.toLowerCase()
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let index = 0; index < a.length; index += 1) {
-    diff |= a.charCodeAt(index) ^ b.charCodeAt(index)
-  }
-  return diff === 0
+async function signSortedObject(checksumKey: string, data: Record<string, unknown>) {
+  return hmacSha256Hex(checksumKey, serializeSortedObject(data))
+}
+
+export async function verifyHmacSha256Hex(secret: string, value: string, signature: string) {
+  const signatureBytes = hexToBytes(signature)
+  if (!signatureBytes) return false
+
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  )
+
+  return crypto.subtle.verify(
+    'HMAC',
+    key,
+    signatureBytes,
+    encoder.encode(value),
+  )
+}
+
+async function verifySortedObjectSignature(
+  checksumKey: string,
+  data: Record<string, unknown>,
+  signature: string,
+) {
+  return verifyHmacSha256Hex(checksumKey, serializeSortedObject(data), signature)
 }
 
 export function createPayOSOrderCode() {
@@ -128,14 +166,22 @@ export async function createPayOSPaymentLink(input: {
       expiredAt: input.expiredAt,
       signature,
     }),
+    signal: AbortSignal.timeout(PAYOS_REQUEST_TIMEOUT_MS),
   })
 
   const body = (await response.json().catch(() => null)) as
-    | { code?: string; desc?: string; data?: { checkoutUrl?: string; paymentLinkId?: string; qrCode?: string } }
+    | { code?: string; desc?: string; data?: PayOSPaymentLinkData; signature?: string }
     | null
 
   if (!response.ok || body?.code !== '00' || !body.data?.checkoutUrl) {
     throw new Error(`PAYOS_CREATE_FAILED:${body?.code ?? response.status}:${body?.desc ?? 'unknown'}`)
+  }
+
+  if (
+    !body.signature ||
+    !(await verifySortedObjectSignature(credentials.checksumKey, body.data, body.signature))
+  ) {
+    throw new Error('PAYOS_CREATE_FAILED:INVALID_RESPONSE_SIGNATURE')
   }
 
   return body.data
@@ -145,6 +191,5 @@ export async function verifyPayOSWebhook(payload: PayOSWebhookPayload) {
   const credentials = getCredentials()
   if (!credentials || !payload.signature || !payload.data) return false
 
-  const expected = await signSortedObject(credentials.checksumKey, payload.data)
-  return safeSignatureEqual(expected, payload.signature)
+  return verifySortedObjectSignature(credentials.checksumKey, payload.data, payload.signature)
 }

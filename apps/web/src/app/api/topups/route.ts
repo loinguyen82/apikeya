@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
+import { isLiveBillingEnabled } from '@/lib/billing-mode'
 import {
   createPayOSOrderCode,
   createPayOSPaymentLink,
@@ -23,6 +24,19 @@ export async function POST(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
+  if (!isLiveBillingEnabled()) {
+    return NextResponse.json(
+      { error: 'Billing đang ở chế độ mô phỏng', code: 'BILLING_MOCK_ONLY' },
+      { status: 503 },
+    )
+  }
+  if (!isPayOSConfigured()) {
+    return NextResponse.json(
+      { error: 'PayOS chưa được cấu hình', code: 'PAYOS_NOT_CONFIGURED' },
+      { status: 503 },
+    )
   }
 
   const form = await req.formData()
@@ -68,8 +82,8 @@ export async function POST(req: NextRequest) {
 
   const topupId = crypto.randomUUID()
   const expiresAt = new Date(Date.now() + TOPUP_TTL_MS)
-  const payosEnabled = isPayOSConfigured()
-  const orderCode = payosEnabled ? createPayOSOrderCode() : null
+  const payosEnabled = true
+  const orderCode = createPayOSOrderCode()
 
   const { data, error } = await admin
     .from('topups')
@@ -79,7 +93,7 @@ export async function POST(req: NextRequest) {
       amount_micros: String(amount * 1000),
       bonus_micros: String(bonus * 1000),
       payable_vnd: amount,
-      payment_provider: payosEnabled ? 'payos' : 'manual_vietqr',
+      payment_provider: 'payos',
       external_id: orderCode ? String(orderCode) : null,
       status: 'pending',
       expires_at: expiresAt.toISOString(),

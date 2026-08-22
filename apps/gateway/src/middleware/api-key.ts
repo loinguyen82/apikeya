@@ -19,6 +19,17 @@ export function extractBearerApiKey(value: string | undefined): string | null {
   return key || null
 }
 
+export async function updateLastUsedBestEffort(
+  operation: () => PromiseLike<{ error: { code?: string } | null }>,
+): Promise<void> {
+  try {
+    const { error } = await operation()
+    if (error) console.error('API key last_used_at update failed', { code: error.code })
+  } catch (error) {
+    console.error('API key last_used_at update failed', { error })
+  }
+}
+
 export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
   const auth = c.req.header('authorization')
   const rawHeaderKey = c.req.header('x-api-key')
@@ -59,11 +70,9 @@ export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variab
   c.set('apiKeyId', data.id)
   await next()
 
-  const lastUsedUpdate = Promise.resolve(
+  const lastUsedUpdate = updateLastUsedBestEffort(() =>
     db.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
-  ).then(({ error: updateError }) => {
-    if (updateError) console.error('API key last_used_at update failed', { code: updateError.code })
-  })
+  )
 
   let executionCtx: { waitUntil(promise: Promise<any>): void } | undefined
   try {

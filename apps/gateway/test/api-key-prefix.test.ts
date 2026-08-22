@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { extractBearerApiKey, isSupportedApiKey } from '../src/middleware/api-key.js'
+import { describe, expect, it, vi } from 'vitest'
+import { extractBearerApiKey, isSupportedApiKey, updateLastUsedBestEffort } from '../src/middleware/api-key.js'
 
 describe('API key prefixes', () => {
   it('accepts new sk keys and legacy ak_live keys', () => {
@@ -21,5 +21,13 @@ describe('API key prefixes', () => {
   it('does not treat other auth schemes as bearer credentials', () => {
     expect(extractBearerApiKey('Basic abc')).toBeNull()
     expect(extractBearerApiKey(undefined)).toBeNull()
+  })
+
+  it('does not fail an authenticated request when the last-used audit rejects', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await expect(
+      updateLastUsedBestEffort(() => Promise.reject(new Error('database unavailable'))),
+    ).resolves.toBeUndefined()
   })
 })

@@ -11,7 +11,7 @@ export default async function PlaygroundPage({
   const { data: models } = await supabase
     .from('models')
     .select('id,display_name')
-    .neq('status', 'disabled')
+    .eq('status', 'active')
     .order('display_name')
 
   const safeModels = (models ?? []) as { id: string; display_name: string }[]

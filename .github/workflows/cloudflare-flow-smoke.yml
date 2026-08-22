@@ -52,12 +52,19 @@ jobs:
           check_get '/signup' '200'
           check_get '/login' '200'
           check_get '/docs' '200'
+          check_get '/api/health' '200'
 
           version_code=$(curl -sS -o /tmp/version-body -w '%{http_code}' "$BASE/api/version" || echo 000)
           version_body=$(cat /tmp/version-body 2>/dev/null | head -c 300 | tr '\n' ' ')
           echo "- GET /api/version: HTTP $version_code — $version_body" >> "$OUT"
           [ "$version_code" = '200' ] || failures=$((failures+1))
-          echo "$version_body" | grep -q 'payos-1k-v1' || failures=$((failures+1))
+          echo "$version_body" | grep -q 'tide-mock-v1' || failures=$((failures+1))
+
+          health_code=$(curl -sS -o /tmp/health-body -w '%{http_code}' "$BASE/api/health" || echo 000)
+          payment_mode=$(jq -r '.paymentMode // ""' /tmp/health-body 2>/dev/null || true)
+          echo "- GET /api/health payment mode: HTTP $health_code — ${payment_mode:-missing}" >> "$OUT"
+          [ "$health_code" = '200' ] || failures=$((failures+1))
+          [ "$payment_mode" = 'mock' ] || failures=$((failures+1))
 
           check_redirect '/dashboard'
           check_redirect '/dashboard/billing'

@@ -29,5 +29,8 @@ jobs:
       - name: Typecheck web
         run: npm run typecheck --workspace @aiapi/web
 
+      - name: Test web
+        run: npm test --workspace @aiapi/web
+
       - name: Build OpenNext for Cloudflare
         run: npm run cf:build --workspace @aiapi/web

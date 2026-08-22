@@ -1,32 +1,13 @@
-import { requireUser } from '@/lib/auth'
 import { BillingClient } from '@/components/BillingClient'
+import { requireUser } from '@/lib/auth'
 
-export default async function BillingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ topup?: string }>
-}) {
+export default async function BillingPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const { supabase, user } = await requireUser()
   const params = await searchParams
-
-  const [{ data: wallet }, { data: topups }, { data: currentTopup }] = await Promise.all([
+  const [{ data: wallet }, { data: topups }] = await Promise.all([
     supabase.from('wallets').select('available_micros,reserved_micros').eq('user_id', user.id).single(),
-    supabase.from('topups').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
-    params.topup
-      ? supabase.from('topups').select('*').eq('id', params.topup).eq('user_id', user.id).maybeSingle()
-      : Promise.resolve({ data: null }),
+    supabase.from('topups').select('id,payable_vnd,amount_micros,bonus_micros,status,created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
   ])
 
-  return (
-    <BillingClient
-      wallet={wallet}
-      currentTopup={
-        currentTopup?.data ||
-        (topups && topups.length > 0 && topups[0].status === 'pending' && new Date(topups[0].expires_at) > new Date()
-          ? topups[0]
-          : null)
-      }
-      recentTopups={topups || []}
-    />
-  )
+  return <BillingClient wallet={wallet} recentTopups={topups ?? []} welcome={params.welcome === '1'} />
 }

@@ -40,18 +40,18 @@ export function LoginForm() {
         <div className="field">
           <label htmlFor="login-api-key">API key</label>
           <input id="login-api-key" className="input" type="password" placeholder="sk-..." value={apiKey} onChange={(e) => setApiKey(e.target.value)} required autoComplete="off" spellCheck={false} />
-          <span className="field-hint">Dùng chính API key gọi model để vào Developer Console.</span>
+          <span className="field-hint">Dùng chính API key đang hoạt động để mở Developer Console.</span>
         </div>
         <button className="btn" type="submit" disabled={loading} style={{ width: '100%', marginTop: 3 }}>{loading ? 'Đang xác thực…' : 'Vào Dashboard'}</button>
       </> : <>
-        <div className="notice" role="status">Dành cho tài khoản cũ hoặc tài khoản mới chưa nạp tiền để lấy API key.</div>
-        <div className="field"><label htmlFor="login-email">Email khôi phục</label><input id="login-email" className="input" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" /></div>
-        <div className="field"><label htmlFor="login-password">Mật khẩu khôi phục</label><PasswordField id="login-password" value={password} onChange={setPassword} autoComplete="current-password" /></div>
-        <button className="btn" type="submit" disabled={loading} style={{ width: '100%', marginTop: 3 }}>{loading ? 'Đang đăng nhập…' : 'Tiếp tục bằng tài khoản cũ'}</button>
+        <div className="notice" role="status">Dùng email và mật khẩu nếu bạn chưa có hoặc đã làm mất API key.</div>
+        <div className="field"><label htmlFor="login-email">Email</label><input id="login-email" className="input" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" /></div>
+        <div className="field"><label htmlFor="login-password">Mật khẩu</label><PasswordField id="login-password" value={password} onChange={setPassword} autoComplete="current-password" /></div>
+        <button className="btn" type="submit" disabled={loading} style={{ width: '100%', marginTop: 3 }}>{loading ? 'Đang đăng nhập…' : 'Tiếp tục bằng email'}</button>
       </>}
     </form>
     <button className="btn secondary" type="button" onClick={() => { setLegacy(!legacy); setError(null) }}>
-      {legacy ? '← Dùng API key' : 'Chưa có API key?'}
+      {legacy ? '← Dùng API key' : 'Đăng nhập bằng email'}
     </button>
   </div>
 }
@@ -87,8 +87,8 @@ export function SignupForm() {
   return <form onSubmit={handleSubmit} className="page-stack" style={{ gap: 15 }}>
     {error && <div className="notice danger" role="alert" aria-live="assertive">{error}</div>}
     <div className="field"><label htmlFor="signup-name">Tên hiển thị</label><input id="signup-name" className="input" type="text" placeholder="Tên của bạn" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required /></div>
-    <div className="field"><label htmlFor="signup-email">Email khôi phục</label><input id="signup-email" className="input" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" /><span className="field-hint">Không cần xác minh email. Dùng khi bạn chưa có hoặc làm mất API key.</span></div>
-    <div className="field"><label htmlFor="signup-password">Mật khẩu khôi phục</label><PasswordField id="signup-password" value={password} onChange={setPassword} autoComplete="new-password" minLength={8} /><span className="field-hint">Sau khi nạp tiền và nhận key, đăng nhập hằng ngày bằng API key.</span></div>
-    <button className="btn" type="submit" disabled={loading} style={{ width: '100%', marginTop: 3 }}>{loading ? 'Đang tạo tài khoản…' : 'Tạo tài khoản & nạp tiền'}</button>
+    <div className="field"><label htmlFor="signup-email">Email</label><input id="signup-email" className="input" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" /><span className="field-hint">Dùng để đăng nhập và khôi phục quyền truy cập khi chưa có API key.</span></div>
+    <div className="field"><label htmlFor="signup-password">Mật khẩu</label><PasswordField id="signup-password" value={password} onChange={setPassword} autoComplete="new-password" minLength={8} /><span className="field-hint">Tối thiểu 8 ký tự. API key được quản lý riêng trong console.</span></div>
+    <button className="btn" type="submit" disabled={loading} style={{ width: '100%', marginTop: 3 }}>{loading ? 'Đang tạo tài khoản…' : 'Tạo tài khoản'}</button>
   </form>
 }
