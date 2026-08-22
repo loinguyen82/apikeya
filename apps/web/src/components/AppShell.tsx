@@ -16,7 +16,6 @@ const consoleNav: NavItem[] = [
   { href: '/dashboard/api-keys', label: 'API Keys', icon: 'key' },
   { href: '/dashboard/hexa', label: 'Hexa', icon: 'play' },
   { href: '/dashboard/quota', label: 'Quota', icon: 'usage' },
-  { href: '/dashboard/usage', label: 'Usage', icon: 'usage' },
   { href: '/dashboard/billing', label: 'Billing', icon: 'billing' },
   { href: '/docs', label: 'Docs', icon: 'docs' },
   { href: '/dashboard/settings', label: 'Settings', icon: 'user' },
