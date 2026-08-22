@@ -9,7 +9,10 @@ update public.topups
 set payment_code = 'APV' || upper(substr(replace(id::text, '-', ''), 1, 10))
 where payment_code is null;
 
+-- Keep old web instances compatible during a rolling deploy: after this
+-- migration, an insert that does not yet send payment_code still gets one.
 alter table public.topups
+  alter column payment_code set default ('APV' || upper(substr(encode(gen_random_bytes(6), 'hex'), 1, 10))),
   alter column payment_code set not null;
 
 create unique index if not exists topups_payment_code_unique
@@ -82,7 +85,14 @@ begin
     p_occurred_at, v_code, coalesce(p_raw, '{}'::jsonb)
   )
   on conflict (bank, external_id) do update
-    set last_seen_at = now()
+    set last_seen_at = now(),
+        description = excluded.description,
+        occurred_at = excluded.occurred_at,
+        payment_code = coalesce(public.bank_transactions.payment_code, excluded.payment_code),
+        raw = case
+          when excluded.raw = '{}'::jsonb then public.bank_transactions.raw
+          else excluded.raw
+        end
   returning * into b;
 
   if b.matched_topup_id is not null then
