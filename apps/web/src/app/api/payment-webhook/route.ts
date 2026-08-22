@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
-import { PayOSWebhookPayload, verifyPayOSWebhook } from '@/lib/payos'
+import { isPayOSConfigured, PayOSWebhookPayload, verifyPayOSWebhook } from '@/lib/payos'
 
 async function hmacSha256Hex(secret: string, value: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -115,7 +115,7 @@ async function handleLegacyWebhook(req: NextRequest, rawBody: string) {
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
 
-  if (process.env.PAYOS_CHECKSUM_KEY) {
+  if (isPayOSConfigured()) {
     let payload: PayOSWebhookPayload
     try {
       payload = JSON.parse(rawBody)
