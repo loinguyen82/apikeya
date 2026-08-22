@@ -4,6 +4,8 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+const API_KEY_SESSION_STORAGE_KEY = 'apivn.portal.apiKey'
+
 const nav = [
   ['/dashboard', 'Overview'],
   ['/dashboard/hexa', 'Hexa'],
@@ -16,6 +18,14 @@ const nav = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+
+  function clearApiKeySession() {
+    try {
+      window.sessionStorage.removeItem(API_KEY_SESSION_STORAGE_KEY)
+    } catch {
+      // Sign-out must still work when browser storage is unavailable.
+    }
+  }
 
   return (
     <div className="shell">
@@ -33,7 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/docs" className="console-action-link">Docs</Link>
             <Link href="/admin" className="console-action-link">🛡️ Admin</Link>
             <form action="/auth/signout" method="post">
-              <button type="submit" className="console-logout">Đăng xuất</button>
+              <button type="submit" className="console-logout" onClick={clearApiKeySession}>Đăng xuất</button>
             </form>
           </div>
         </div>
