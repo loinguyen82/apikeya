@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 
-const baseURL = process.env.BASE_URL || 'https://apikeya.vercel.app'
-const gatewayURL = process.env.GATEWAY_URL || 'https://ai-api-gateway.loi822004.workers.dev'
+const baseURL = process.env.BASE_URL || 'https://apivn.tech'
+const gatewayURL = process.env.GATEWAY_URL || 'https://api.apivn.tech'
 const e2eApiKey = process.env.E2E_API_KEY || ''
 const e2eEmail = process.env.E2E_EMAIL || ''
 const e2ePassword = process.env.E2E_PASSWORD || ''
@@ -92,7 +92,7 @@ test.describe('Apikeya authenticated journey', () => {
 
   test('API-key login and all customer surfaces render', async ({ page }) => {
     await login(page)
-    for (const path of ['/dashboard', '/dashboard/billing', '/dashboard/hexa', '/dashboard/quota', '/dashboard/models', '/dashboard/api-keys', '/dashboard/usage']) {
+    for (const path of ['/dashboard', '/dashboard/billing', '/dashboard/hexa', '/dashboard/quota', '/dashboard/models', '/dashboard/api-keys']) {
       await page.goto(`${baseURL}${path}`, { waitUntil: 'networkidle' })
       await expect(page).toHaveURL(new RegExp(path.replaceAll('/', '\\/')))
       await expect(page.locator('body')).not.toContainText('Application error')
@@ -107,6 +107,10 @@ test.describe('Apikeya authenticated journey', () => {
     await page.goto(`${baseURL}/dashboard/quota`, { waitUntil: 'networkidle' })
     await expect(page.getByRole('heading', { name: 'Quota' })).toBeVisible()
     await expect(page.getByRole('region', { name: 'API request usage' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Rate / 1M' })).toBeVisible()
+
+    await page.goto(`${baseURL}/dashboard/usage`, { waitUntil: 'networkidle' })
+    await expect(page).toHaveURL(/\/dashboard\/quota/)
 
     await page.goto(`${baseURL}/dashboard/playground?model=kimi-k2.6`, { waitUntil: 'networkidle' })
     await expect(page).toHaveURL(/\/dashboard\/hexa\?model=kimi-k2\.6/)
