@@ -7,6 +7,7 @@ import { modelsRoute } from './routes/models.js'
 import { internalPlaygroundRoute } from './routes/internal-playground.js'
 import { responsesRoute } from './routes/responses.js'
 import { messagesRoute } from './routes/messages.js'
+import { ensureTelegramWebhook, handleTelegramUpdate, runModelHealthScan } from './monitor/model-health.js'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -20,6 +21,21 @@ app.use(
 )
 
 app.get('/healthz', (c) => c.json({ ok: true, service: 'gateway', version: '0.4.0' }))
+
+app.post('/internal/telegram/model-health', async (c) => {
+  const secret = c.env.TELEGRAM_WEBHOOK_SECRET
+  if (!c.env.TELEGRAM_BOT_TOKEN || !secret) {
+    return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
+  }
+  if (c.req.header('x-telegram-bot-api-secret-token') !== secret) {
+    return c.json({ ok: false, error: 'unauthorized' }, 401)
+  }
+
+  const update = await c.req.json().catch(() => null)
+  if (!update) return c.json({ ok: false, error: 'invalid_update' }, 400)
+  await handleTelegramUpdate(c.env, update, (promise) => c.executionCtx.waitUntil(promise))
+  return c.json({ ok: true })
+})
 
 app.route('/v1/models', modelsRoute)
 
@@ -83,4 +99,16 @@ app.onError((err, c) => {
   )
 })
 
-export default app
+const worker: ExportedHandler<Env> = {
+  fetch(request, env, ctx) {
+    return app.fetch(request, env, ctx)
+  },
+  scheduled(_controller, env, ctx) {
+    ctx.waitUntil((async () => {
+      await ensureTelegramWebhook(env)
+      await runModelHealthScan(env, { notifyChanges: true })
+    })())
+  },
+}
+
+export default worker
