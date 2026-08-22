@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase/admin'
-import { isLiveBillingEnabled } from '@/lib/billing-mode'
-import {
-  createPayOSOrderCode,
-  createPayOSPaymentLink,
-  isPayOSConfigured,
-} from '@/lib/payos'
 
 const MIN_TOPUP_VND = 1000
 const TOPUP_STEP_VND = 1000
@@ -46,6 +40,23 @@ function bonusFor(amount: number) {
   return 0
 }
 
+function bankConfig() {
+  return {
+    bankId: process.env.NEXT_PUBLIC_BANK_ID || 'VCB',
+    bankName: process.env.NEXT_PUBLIC_BANK_NAME || 'Ngân hàng TMCP Ngoại Thương Việt Nam (Vietcombank)',
+    accountNo: process.env.NEXT_PUBLIC_BANK_ACCOUNT_NO || '9345521253',
+    accountName: process.env.NEXT_PUBLIC_BANK_ACCOUNT_NAME || 'NGUYEN DINH LOI',
+  }
+}
+
+function paymentDetails(topupId: string, amount: number) {
+  const bank = bankConfig()
+  const memo = `NAP ${topupId.slice(0, 8).toUpperCase()}`
+  const accountNo = bank.accountNo.replace(/\s+/g, '')
+  const qrUrl = `https://img.vietqr.io/image/${encodeURIComponent(bank.bankId)}-${encodeURIComponent(accountNo)}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(memo)}&accountName=${encodeURIComponent(bank.accountName)}`
+  return { ...bank, accountNo, memo, qrUrl }
+}
+
 export async function POST(req: NextRequest) {
   const internalToken = req.headers.get('x-internal-token') ?? ''
   const expectedToken = process.env.GATEWAY_INTERNAL_TOKEN ?? ''
@@ -58,12 +69,6 @@ export async function POST(req: NextRequest) {
   }
   if (!userId || !assertionSecret || !(await verifyUserAssertion(assertionSecret, userId, assertion))) {
     return NextResponse.json({ error: 'invalid_user_context' }, { status: 401 })
-  }
-  if (!isLiveBillingEnabled()) {
-    return NextResponse.json({ error: 'billing_not_configured' }, { status: 503 })
-  }
-  if (!isPayOSConfigured()) {
-    return NextResponse.json({ error: 'PAYOS_NOT_CONFIGURED' }, { status: 503 })
   }
 
   const payload = await req.json().catch(() => null) as { amount?: unknown } | null
@@ -82,22 +87,32 @@ export async function POST(req: NextRequest) {
     .eq('status', 'pending')
     .lte('expires_at', now.toISOString())
 
-  const { count: activePendingCount, error: pendingLookupError } = await admin
+  const { data: existing, error: existingError } = await admin
     .from('topups')
-    .select('id', { count: 'exact', head: true })
+    .select('id,payable_vnd,bonus_micros,expires_at')
     .eq('user_id', userId)
     .eq('status', 'pending')
     .gt('expires_at', now.toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-  if (pendingLookupError) {
+  if (existingError) {
     return NextResponse.json({ error: 'TOPUP_LOOKUP_FAILED' }, { status: 503 })
   }
-  if ((activePendingCount ?? 0) > 0) {
-    return NextResponse.json({ error: 'ACTIVE_TOPUP_EXISTS' }, { status: 409 })
+  if (existing) {
+    const details = paymentDetails(existing.id, Number(existing.payable_vnd))
+    return NextResponse.json({
+      error: 'ACTIVE_TOPUP_EXISTS',
+      topupId: existing.id,
+      amount: Number(existing.payable_vnd),
+      bonus: Number(BigInt(existing.bonus_micros ?? 0) / 1000n),
+      expiresAt: existing.expires_at,
+      ...details,
+    }, { status: 409 })
   }
 
   const topupId = crypto.randomUUID()
-  const orderCode = createPayOSOrderCode()
   const expiresAt = new Date(now.getTime() + TOPUP_TTL_MS)
   const bonus = bonusFor(amount)
 
@@ -107,8 +122,8 @@ export async function POST(req: NextRequest) {
     amount_micros: String(amount * 1000),
     bonus_micros: String(bonus * 1000),
     payable_vnd: amount,
-    payment_provider: 'payos',
-    external_id: String(orderCode),
+    payment_provider: 'manual_vietqr',
+    external_id: null,
     status: 'pending',
     expires_at: expiresAt.toISOString(),
   })
@@ -120,33 +135,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'TOPUP_CREATE_FAILED' }, { status: 500 })
   }
 
-  const description = `APIVN${topupId.replace(/-/g, '').slice(0, 4).toUpperCase()}`
-  const returnUrl = `https://apivn.tech/dashboard/billing?topup=${topupId}&payment=return&source=telegram`
-  const cancelUrl = `https://apivn.tech/dashboard/billing?topup=${topupId}&payment=cancelled&source=telegram`
-
-  try {
-    const payment = await createPayOSPaymentLink({
-      orderCode,
-      amount,
-      description,
-      returnUrl,
-      cancelUrl,
-      expiredAt: Math.floor(expiresAt.getTime() / 1000),
-    })
-
-    return NextResponse.json({
-      ok: true,
-      topupId,
-      amount,
-      bonus,
-      description,
-      expiresAt: expiresAt.toISOString(),
-      checkoutUrl: payment.checkoutUrl,
-      qrCode: payment.qrCode ?? null,
-    })
-  } catch (error) {
-    await admin.from('topups').update({ status: 'cancelled' }).eq('id', topupId).eq('status', 'pending')
-    console.error('telegram payOS create payment failed', error)
-    return NextResponse.json({ error: 'PAYOS_CREATE_FAILED' }, { status: 502 })
-  }
+  return NextResponse.json({
+    ok: true,
+    topupId,
+    amount,
+    bonus,
+    expiresAt: expiresAt.toISOString(),
+    ...paymentDetails(topupId, amount),
+  })
 }
