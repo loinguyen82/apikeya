@@ -55,7 +55,8 @@ export function A6MarketplacePricingClient() {
 
   async function updatePrices() {
     if (!authenticated) {
-      setError('Worker chưa có A6API_KEY nên chưa thể cập nhật giá. Hãy cấu hình secret A6API_KEY trước.')
+      setError(null)
+      setMessage('Update đang bị khóa: Worker chưa có A6API_KEY. Hãy cấu hình secret rồi bấm Scan giá lại.')
       return
     }
     if (!window.confirm('Cập nhật giá vốn và giá user từ A6 cho các model đang có route? Giá user hiện cao hơn đề xuất sẽ không bị hạ.')) return
@@ -82,7 +83,7 @@ export function A6MarketplacePricingClient() {
   return <section className="surface model-table-shell">
     <div className="surface-head">
       <div><div className="eyebrow">A6 Marketplace</div><h3>Giá vốn live (chỉ Admin)</h3></div>
-      <div className="page-actions"><button className="btn secondary" type="button" onClick={refresh} disabled={loading || updating}>{loading ? 'Đang lấy giá…' : 'Scan giá'}</button>{rows.length > 0 && <button className="btn" type="button" onClick={updatePrices} disabled={loading || updating}>{updating ? 'Đang cập nhật…' : 'Update giá từ A6'}</button>}</div>
+      <div className="page-actions"><button className="btn secondary" type="button" onClick={refresh} disabled={loading || updating}>{loading ? 'Đang lấy giá…' : 'Scan giá'}</button>{rows.length > 0 && <button className={authenticated ? 'btn' : 'btn secondary'} type="button" onClick={updatePrices} disabled={!authenticated || loading || updating} title={!authenticated ? 'Cần cấu hình A6API_KEY trên Worker' : undefined}>{updating ? 'Đang cập nhật…' : authenticated ? 'Update giá từ A6' : 'Update cần A6 key'}</button>}</div>
     </div>
     <div className="surface-body">
       <p className="muted" style={{ marginTop: 0 }}>Worker gọi A6 bằng API key server-side, không lộ secret ra browser. Xem nguồn tại <a href="https://a6api.com/marketplace" target="_blank" rel="noreferrer">A6 Marketplace</a>. Scan không ghi DB; nút Update mới đồng bộ giá.</p>
@@ -90,7 +91,8 @@ export function A6MarketplacePricingClient() {
         <div className="field"><label htmlFor="a6-marketplace-rate">Tỷ giá (VNĐ / 1 USD)</label><input id="a6-marketplace-rate" className="input" type="number" min="0" step="1" value={rate} onChange={(event) => setRate(event.target.value)} /></div>
         <div className="field"><label htmlFor="a6-marketplace-markup">Biên user (+VNĐ / 1M)</label><input id="a6-marketplace-markup" className="input" type="number" min="0" step="1" value={markup} onChange={(event) => setMarkup(event.target.value)} /></div>
       </div>
-      {fetchedAt && <p className="muted" style={{ fontSize: 12 }}>Kết nối: {authenticated ? 'A6API_KEY' : 'public endpoint'} · Cập nhật: {new Date(fetchedAt).toLocaleString('vi-VN')}{assumption ? ` · ${assumption}` : ''}</p>}
+      {fetchedAt && <p className="muted" style={{ fontSize: 12 }}>Kết nối: <span className={`status-chip ${authenticated ? 'success' : 'warning'}`}>{authenticated ? 'A6API_KEY · update enabled' : 'public preview · update disabled'}</span> · Cập nhật: {new Date(fetchedAt).toLocaleString('vi-VN')}{assumption ? ` · ${assumption}` : ''}</p>}
+      {fetchedAt && !authenticated && <p className="muted" role="status" style={{ marginBottom: 0 }}>Thiếu <code>A6API_KEY</code> trên Worker Web. Bạn vẫn xem được giá scan, nhưng Update bị khóa để tránh ghi dữ liệu khi chưa đăng nhập A6.</p>}
       {error && <p className="danger-text" role="alert">{error}</p>}
       {message && <p className="muted" role="status">{message}</p>}
     </div>
