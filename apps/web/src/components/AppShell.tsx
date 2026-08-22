@@ -7,6 +7,8 @@ import { usePathname } from 'next/navigation'
 import { BrandLogo } from './BrandLogo'
 import { TideIcon } from './TideIcon'
 
+const API_KEY_SESSION_STORAGE_KEY = 'apivn.portal.apiKey'
+
 type IconName = Parameters<typeof TideIcon>[0]['name']
 type NavItem = { href: string; label: string; icon: IconName }
 
@@ -42,7 +44,15 @@ export function AppShell({ children, user }: { children: ReactNode; user: { disp
     return () => { document.body.style.overflow = '' }
   }, [drawerOpen])
 
-  const sidebar = <><div className="tide-sidebar-brand"><BrandLogo href="/dashboard" gradientId="apivn-sidebar-gradient" /></div><nav className="tide-nav" aria-label="Điều hướng Developer Console"><div className="tide-nav-label">Developer Console</div>{consoleNav.map((item) => <NavLink key={item.href} item={item} pathname={pathname} />)}{user.isAdmin && <NavLink item={{ href: '/admin', label: 'Admin', icon: 'admin' }} pathname={pathname} />}</nav><div className="tide-sidebar-foot"><div className="sidebar-profile"><span className="sidebar-avatar">{initial}</span><span><strong>{user.displayName || 'APIVN user'}</strong><span>{user.email}</span></span></div><div className="sidebar-balance"><span>Số dư</span><strong>{user.balanceLabel}</strong></div><form action="/auth/signout" method="post"><button type="submit" className="sidebar-signout">Đăng xuất</button></form></div></>
+  function clearApiKeySession() {
+    try {
+      window.sessionStorage.removeItem(API_KEY_SESSION_STORAGE_KEY)
+    } catch {
+      // Sign-out must still continue when browser storage is unavailable.
+    }
+  }
+
+  const sidebar = <><div className="tide-sidebar-brand"><BrandLogo href="/dashboard" gradientId="apivn-sidebar-gradient" /></div><nav className="tide-nav" aria-label="Điều hướng Developer Console"><div className="tide-nav-label">Developer Console</div>{consoleNav.map((item) => <NavLink key={item.href} item={item} pathname={pathname} />)}{user.isAdmin && <NavLink item={{ href: '/admin', label: 'Admin', icon: 'admin' }} pathname={pathname} />}</nav><div className="tide-sidebar-foot"><div className="sidebar-profile"><span className="sidebar-avatar">{initial}</span><span><strong>{user.displayName || 'APIVN user'}</strong><span>{user.email}</span></span></div><div className="sidebar-balance"><span>Số dư</span><strong>{user.balanceLabel}</strong></div><form action="/auth/signout" method="post"><button type="submit" className="sidebar-signout" onClick={clearApiKeySession}>Đăng xuất</button></form></div></>
 
   return (
     <div className="tide-shell">
