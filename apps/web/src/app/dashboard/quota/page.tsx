@@ -1,5 +1,6 @@
 import { requireUser } from '@/lib/auth'
 import { QuotaTable, type QuotaRequestRow } from '@/components/QuotaTable'
+import styles from './QuotaPage.module.css'
 
 const allowedPageSizes = new Set([25, 50, 100])
 
@@ -68,16 +69,16 @@ export default async function QuotaPage({
   }))
 
   return (
-    <div className="quota-page stack" style={{ gap: '20px' }}>
-      <div className="quota-heading">
+    <div className={`${styles.page} stack`}>
+      <div className={styles.heading}>
         <div>
           <span className="eyebrow">REQUEST USAGE</span>
           <h1>Quota</h1>
-          <p className="muted">Completed and in-flight API requests, newest first. Token fields come from provider-reported usage when available.</p>
+          <p className="muted">Lịch sử request theo thời gian thực. Rate được chuẩn hóa từ chi phí thực tế của từng request về mức / 1M token để dễ so sánh.</p>
         </div>
       </div>
 
-      <section className="quota-panel" aria-label="API request usage">
+      <section className={styles.panel} aria-label="API request usage">
         {error ? (
           <p className="quota-error">Unable to load request usage. Apply the latest database migration, then try again.</p>
         ) : (
