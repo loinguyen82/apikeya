@@ -1,0 +1,193 @@
+-- Quota records provider-reported token dimensions and measurable request timing.
+-- Existing started_at/completed_at remain the canonical request start/finish timestamps.
+alter table public.api_requests
+  add column if not exists stream boolean not null default false;
+alter table public.api_requests
+  add column if not exists requested_model_id text;
+alter table public.api_requests
+  add column if not exists cached_input_tokens integer check (cached_input_tokens is null or cached_input_tokens >= 0);
+alter table public.api_requests
+  add column if not exists cache_creation_input_tokens integer check (cache_creation_input_tokens is null or cache_creation_input_tokens >= 0);
+alter table public.api_requests
+  add column if not exists reasoning_tokens integer check (reasoning_tokens is null or reasoning_tokens >= 0);
+alter table public.api_requests
+  add column if not exists total_tokens integer check (total_tokens is null or total_tokens >= 0);
+alter table public.api_requests
+  add column if not exists first_token_at timestamptz;
+
+alter table public.provider_attempts
+  add column if not exists cached_input_tokens integer check (cached_input_tokens is null or cached_input_tokens >= 0);
+alter table public.provider_attempts
+  add column if not exists cache_creation_input_tokens integer check (cache_creation_input_tokens is null or cache_creation_input_tokens >= 0);
+alter table public.provider_attempts
+  add column if not exists reasoning_tokens integer check (reasoning_tokens is null or reasoning_tokens >= 0);
+alter table public.provider_attempts
+  add column if not exists total_tokens integer check (total_tokens is null or total_tokens >= 0);
+alter table public.provider_attempts
+  add column if not exists first_token_at timestamptz;
+
+-- Context window/tokenizer metadata is catalog-owned. No UI fallback is used.
+alter table public.models
+  add column if not exists context_window_tokens integer check (context_window_tokens is null or context_window_tokens > 0);
+alter table public.models
+  add column if not exists tokenizer_family text;
+
+-- Tokenizer strategy is catalog-owned operational metadata. This migration
+-- intentionally does not infer a strategy from APIVN or upstream model IDs;
+-- unmapped models use Hexa's explicitly labeled deterministic estimate until
+-- verified metadata is populated through the catalog workflow.
+
+create index if not exists api_requests_user_created_id_idx
+  on public.api_requests(user_id, created_at desc, id desc);
+
+-- Add stream state without overloading the old RPC signature.
+drop function if exists public.reserve_api_request(uuid,uuid,uuid,text,text,bigint,text,text,bigint,bigint,bigint,integer,integer);
+create function public.reserve_api_request(
+  p_request_id uuid,
+  p_user_id uuid,
+  p_api_key_id uuid,
+  p_channel text,
+  p_model_id text,
+  p_requested_model_id text,
+  p_reserve_micros bigint,
+  p_idempotency_key text default null,
+  p_pricing_mode_snapshot text default null,
+  p_retail_flat_snapshot bigint default null,
+  p_retail_input_snapshot bigint default null,
+  p_retail_output_snapshot bigint default null,
+  p_estimated_input_tokens integer default 0,
+  p_max_output_tokens integer default 0,
+  p_stream boolean default false
+) returns public.api_requests
+language plpgsql security definer set search_path=public as $$
+declare
+  v_wallet public.wallets;
+  v_existing public.api_requests;
+  v_request public.api_requests;
+begin
+  if p_reserve_micros <= 0 then raise exception 'INVALID_RESERVE'; end if;
+  if p_channel not in ('api','playground') then raise exception 'INVALID_CHANNEL'; end if;
+  if p_channel='api' and p_api_key_id is null then raise exception 'API_KEY_REQUIRED'; end if;
+  if p_pricing_mode_snapshot not in ('flat_total','split_io') then raise exception 'INVALID_PRICE_SNAPSHOT'; end if;
+  if p_idempotency_key is not null and length(p_idempotency_key)>128 then raise exception 'IDEMPOTENCY_KEY_TOO_LONG'; end if;
+
+  if p_idempotency_key is not null then
+    select * into v_existing from public.api_requests where user_id=p_user_id and idempotency_key=p_idempotency_key;
+    if found then return v_existing; end if;
+  end if;
+
+  select * into v_wallet from public.wallets where user_id=p_user_id for update;
+  if not found then raise exception 'WALLET_NOT_FOUND'; end if;
+  if v_wallet.available_micros < p_reserve_micros then raise exception 'INSUFFICIENT_BALANCE'; end if;
+
+  update public.wallets
+    set available_micros=available_micros-p_reserve_micros,
+        reserved_micros=reserved_micros+p_reserve_micros,
+        updated_at=now()
+    where user_id=p_user_id;
+
+  insert into public.api_requests(
+    id,user_id,api_key_id,channel,model_id,requested_model_id,status,reserve_micros,idempotency_key,started_at,stream,
+    pricing_mode_snapshot,retail_flat_micros_per_mtoken_snapshot,retail_input_micros_per_mtoken_snapshot,
+    retail_output_micros_per_mtoken_snapshot,reserve_estimated_input_tokens,reserve_max_output_tokens
+  ) values(
+    p_request_id,p_user_id,p_api_key_id,p_channel,p_model_id,p_requested_model_id,'reserved',p_reserve_micros,p_idempotency_key,now(),coalesce(p_stream,false),
+    p_pricing_mode_snapshot,p_retail_flat_snapshot,p_retail_input_snapshot,p_retail_output_snapshot,
+    p_estimated_input_tokens,p_max_output_tokens
+  ) returning * into v_request;
+
+  insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key)
+    values(p_user_id,'reserve',-p_reserve_micros,p_reserve_micros,'api_request',p_request_id,case when p_idempotency_key is null then null else 'reserve:'||p_idempotency_key end);
+
+  return v_request;
+exception when unique_violation then
+  if p_idempotency_key is not null then
+    select * into v_existing from public.api_requests where user_id=p_user_id and idempotency_key=p_idempotency_key;
+    return v_existing;
+  end if;
+  raise;
+end; $$;
+
+drop function if exists public.settle_api_request(uuid,bigint,bigint,integer,integer,text,text);
+create function public.settle_api_request(
+  p_request_id uuid,
+  p_retail_cost_micros bigint,
+  p_upstream_cost_micros bigint,
+  p_input_tokens integer,
+  p_cached_input_tokens integer,
+  p_cache_creation_input_tokens integer,
+  p_output_tokens integer,
+  p_reasoning_tokens integer,
+  p_total_tokens integer,
+  p_provider_id text,
+  p_provider_request_id text default null,
+  p_first_token_at timestamptz default null
+) returns public.api_requests
+language plpgsql security definer set search_path=public as $$
+declare
+  r public.api_requests;
+  w public.wallets;
+  extra_needed bigint;
+  extra_collected bigint;
+  refund bigint;
+  gap bigint;
+begin
+  if p_retail_cost_micros < 0 or p_upstream_cost_micros < 0
+    or p_input_tokens < 0 or p_output_tokens < 0
+    or (p_cached_input_tokens is not null and p_cached_input_tokens < 0)
+    or (p_cache_creation_input_tokens is not null and p_cache_creation_input_tokens < 0)
+    or (p_reasoning_tokens is not null and p_reasoning_tokens < 0)
+    or (p_total_tokens is not null and p_total_tokens < 0) then
+    raise exception 'INVALID_SETTLEMENT_VALUES';
+  end if;
+  if p_provider_id is null or length(trim(p_provider_id)) = 0 then
+    raise exception 'PROVIDER_REQUIRED';
+  end if;
+
+  select * into r from public.api_requests where id=p_request_id for update;
+  if not found then raise exception 'REQUEST_NOT_FOUND'; end if;
+  if r.status='settled' then return r; end if;
+  if r.status in ('released', 'failed_ambiguous') then raise exception 'REQUEST_NOT_SETTLEABLE'; end if;
+  if r.status not in ('reserved', 'dispatching', 'streaming') then raise exception 'INVALID_REQUEST_STATE'; end if;
+  select * into w from public.wallets where user_id=r.user_id for update;
+  if not found then raise exception 'WALLET_NOT_FOUND'; end if;
+
+  if p_retail_cost_micros <= r.reserve_micros then
+    refund := r.reserve_micros - p_retail_cost_micros;
+    update public.wallets
+      set reserved_micros=reserved_micros-r.reserve_micros,
+          available_micros=available_micros+refund,
+          updated_at=now()
+      where user_id=r.user_id;
+    insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key)
+      values(r.user_id,'settle_refund',refund,-r.reserve_micros,'api_request',r.id,'settle:'||r.id::text)
+      on conflict do nothing;
+    gap := 0;
+  else
+    extra_needed := p_retail_cost_micros - r.reserve_micros;
+    extra_collected := least(extra_needed, w.available_micros);
+    gap := extra_needed - extra_collected;
+    update public.wallets
+      set reserved_micros=reserved_micros-r.reserve_micros,
+          available_micros=available_micros-extra_collected,
+          updated_at=now()
+      where user_id=r.user_id;
+    insert into public.wallet_ledger(user_id,kind,delta_available_micros,delta_reserved_micros,reference_type,reference_id,idempotency_key,metadata)
+      values(r.user_id,'settle_extra',-extra_collected,-r.reserve_micros,'api_request',r.id,'settle:'||r.id::text,jsonb_build_object('billing_gap_micros',gap))
+      on conflict do nothing;
+  end if;
+
+  update public.api_requests set
+    status='settled', retail_cost_micros=p_retail_cost_micros, upstream_cost_micros=p_upstream_cost_micros,
+    billing_gap_micros=gap, input_tokens=p_input_tokens, cached_input_tokens=p_cached_input_tokens,
+    cache_creation_input_tokens=p_cache_creation_input_tokens, output_tokens=p_output_tokens,
+    reasoning_tokens=p_reasoning_tokens, total_tokens=p_total_tokens, provider_id=p_provider_id,
+    provider_request_id=p_provider_request_id, first_token_at=coalesce(first_token_at,p_first_token_at), completed_at=now()
+    where id=r.id returning * into r;
+  return r;
+end; $$;
+
+revoke all on function public.reserve_api_request(uuid,uuid,uuid,text,text,text,bigint,text,text,bigint,bigint,bigint,integer,integer,boolean) from public, anon, authenticated;
+revoke all on function public.settle_api_request(uuid,bigint,bigint,integer,integer,integer,integer,integer,integer,text,text,timestamptz) from public, anon, authenticated;
+grant execute on function public.reserve_api_request(uuid,uuid,uuid,text,text,text,bigint,text,text,bigint,bigint,bigint,integer,integer,boolean) to service_role;
+grant execute on function public.settle_api_request(uuid,bigint,bigint,integer,integer,integer,integer,integer,integer,text,text,timestamptz) to service_role;

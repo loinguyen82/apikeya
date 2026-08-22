@@ -28,6 +28,8 @@ export interface ModelCatalogItem {
   defaultMaxOutputTokens: number
   maxOutputTokens: number
   streamingEnabled: boolean
+  contextWindowTokens?: number | null
+  tokenizerFamily?: string | null
 }
 
 export interface ChatFunctionCall {
@@ -82,6 +84,108 @@ export interface ChatCompletionRequest {
 export interface TokenUsage {
   inputTokens: number
   outputTokens: number
+}
+
+export interface NormalizedTokenUsage {
+  inputTokens: number | null
+  cachedInputTokens: number | null
+  cacheCreationInputTokens?: number | null
+  outputTokens: number | null
+  reasoningTokens: number | null
+  totalTokens: number | null
+  providerReported: boolean
+}
+
+export type TokenCountAccuracy =
+  | 'provider_native'
+  | 'official_tokenizer'
+  | 'compatible_tokenizer'
+  | 'estimated'
+
+export interface TokenCountDetails {
+  cachedInputTokens?: number | null
+  cacheCreationInputTokens?: number | null
+  systemTokens?: number | null
+  historyTokens?: number | null
+  currentMessageTokens?: number | null
+  toolTokens?: number | null
+  otherTokens?: number | null
+  overheadTokens?: number | null
+}
+
+export interface TokenCountResult {
+  tokens: number
+  accuracy: TokenCountAccuracy
+  provider: string
+  model: string
+  details?: TokenCountDetails
+}
+
+export interface HexaMessage {
+  role: string
+  content?: unknown
+  [key: string]: unknown
+}
+
+export interface HexaTextInput {
+  type: 'text'
+  text: string
+}
+
+export interface HexaConversationInput {
+  type: 'conversation'
+  messages: HexaMessage[]
+  system?: unknown
+  tools?: unknown
+  [key: string]: unknown
+}
+
+export type HexaCountInput = HexaTextInput | HexaConversationInput
+
+export interface HexaMessageCount {
+  index: number
+  role: string
+  label: string
+  tokens: number
+}
+
+export interface HexaContextGrowthPoint {
+  turn: number
+  inputTokens: number
+  outputTokens: number | null
+}
+
+export interface HexaConversationBreakdown {
+  systemTokens: number
+  historyTokens: number
+  currentMessageTokens: number
+  toolTokens: number
+  otherTokens: number
+  protocolDeltaTokens: number
+}
+
+export interface HexaConversationAnalysis {
+  messageCounts: HexaMessageCount[]
+  breakdown: HexaConversationBreakdown
+  currentContextTokens: number
+  cumulativeInputTokens: number
+  newContentTokens: number
+  reReadContextTokens: number
+  historyTax: number | null
+  contextAmplification: number | null
+  growth: HexaContextGrowthPoint[]
+}
+
+export interface HexaAnalysis {
+  model: string
+  provider: string
+  count: TokenCountResult
+  text?: {
+    characters: number
+    words: number
+  }
+  conversation?: HexaConversationAnalysis
+  contextWindowTokens: number | null
 }
 
 export interface ProviderCandidate {
