@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 
-const baseURL = process.env.BASE_URL || 'https://apikeya.vercel.app'
-const gatewayURL = process.env.GATEWAY_URL || 'https://ai-api-gateway.loi822004.workers.dev'
+const baseURL = process.env.BASE_URL || 'https://apivn.tech'
+const gatewayURL = process.env.GATEWAY_URL || 'https://api.apivn.tech'
 const e2eApiKey = process.env.E2E_API_KEY || ''
 const e2eEmail = process.env.E2E_EMAIL || ''
 const e2ePassword = process.env.E2E_PASSWORD || ''
@@ -32,6 +32,14 @@ async function legacyLogin(page) {
 }
 
 test.describe('Apikeya production public contract', () => {
+  test('deployed revision matches the current 1k/payOS contract', async ({ request }) => {
+    const res = await request.get(`${baseURL}/api/version`)
+    expect(res.status()).toBe(200)
+    const body = await res.json()
+    expect(body?.service).toBe('apivn-web')
+    expect(body?.version).toBe('payos-1k-v1')
+  })
+
   test('landing, pricing, docs and key-first auth pages render', async ({ page }) => {
     await page.goto(baseURL, { waitUntil: 'networkidle' })
     await expect(page.getByText('Apikeya').first()).toBeVisible()
@@ -75,7 +83,7 @@ test.describe('Apikeya production public contract', () => {
     expect(keyRes.status()).toBe(401)
 
     const topupRes = await request.post(`${baseURL}/api/topups`, {
-      form: { amount: '20000' },
+      form: { amount: '1000' },
       headers: { origin: baseURL },
     })
     expect(topupRes.status()).toBe(401)
@@ -100,12 +108,12 @@ test.describe('Apikeya authenticated journey', () => {
     }
   })
 
-  test('billing exposes the 20k entry package', async ({ page }) => {
+  test('billing exposes the 1k entry package', async ({ page }) => {
     await login(page)
     await page.goto(`${baseURL}/dashboard/billing`, { waitUntil: 'networkidle' })
     await expect(page.getByRole('heading', { name: /nạp số dư bằng vietqr/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /20\.000/ })).toBeVisible()
-    await expect(page.locator('body')).toContainText('Chờ đối soát')
+    await expect(page.getByRole('button', { name: /1\.000/ }).first()).toBeVisible()
+    await expect(page.locator('body')).toContainText('Nạp từ 1.000đ')
   })
 
   test('optional key rotation exposes one new secret and revokes the prior key', async ({ page }) => {
@@ -120,15 +128,25 @@ test.describe('Apikeya authenticated journey', () => {
     await expect(page.getByText('1 active')).toBeVisible()
   })
 
-  test('optional topup mutation creates a real pending QR request', async ({ page }) => {
+  test('optional topup mutation creates a 1k payment request', async ({ page }) => {
     test.skip(!allowMutations, 'Set E2E_MUTATING=true only for a dedicated test account.')
     await login(page)
     await page.goto(`${baseURL}/dashboard/billing`, { waitUntil: 'networkidle' })
-    await page.getByRole('button', { name: /20\.000/ }).click()
-    await page.getByRole('button', { name: /Tạo mã VietQR/ }).click()
-    await page.waitForURL(/\/dashboard\/billing\?topup=/, { timeout: 15000 })
-    await expect(page.getByAltText('Mã VietQR nạp tiền')).toBeVisible()
-    await expect(page.locator('body')).toContainText('Nội dung bắt buộc')
+    await page.getByRole('button', { name: /1\.000/ }).first().click()
+    await page.getByRole('button', { name: /Thanh toán.*1\.000/i }).click()
+
+    await page.waitForLoadState('domcontentloaded')
+    const currentUrl = new URL(page.url())
+    const appHost = new URL(baseURL).host
+
+    if (currentUrl.host === appHost) {
+      await expect(page).toHaveURL(/\/dashboard\/billing\?topup=/)
+      await expect(page.getByAltText('Mã VietQR nạp tiền')).toBeVisible()
+      await expect(page.locator('body')).toContainText('Nội dung bắt buộc')
+    } else {
+      expect(currentUrl.protocol).toBe('https:')
+      expect(currentUrl.host).not.toBe(appHost)
+    }
   })
 
   test('optional funded flow returns real Playground and gateway responses', async ({ page, request }) => {
