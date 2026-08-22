@@ -32,7 +32,7 @@ function contentText(content: unknown): string {
     .join('')
 }
 
-function toChatRequest(body: ResponsesRequest): ChatCompletionRequest {
+export function toChatRequest(body: ResponsesRequest): ChatCompletionRequest {
   const messages: ChatMessage[] = []
   if (body.instructions) messages.push({ role: 'system', content: body.instructions })
   if (typeof body.input === 'string') {
@@ -47,7 +47,7 @@ function toChatRequest(body: ResponsesRequest): ChatCompletionRequest {
   return {
     model: body.model ?? '',
     messages,
-    stream: false,
+    stream: body.stream === true,
     temperature: body.temperature,
     max_completion_tokens: body.max_output_tokens,
   }
@@ -100,17 +100,34 @@ function transformStream(stream: ReadableStream<Uint8Array>, model: string): Rea
   const decoder = new TextDecoder()
   const encoder = new TextEncoder()
   let buffer = ''
-  let responseId = `resp_${crypto.randomUUID()}`
+  const responseId = `resp_${crypto.randomUUID()}`
+  const itemId = `${responseId}_msg`
   let text = ''
   let usage: any = {}
   let started = false
+
+  const emitStart = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    controller.enqueue(encoder.encode(sseEvent('response.created', responseCreatedPayload(responseId, model))))
+    controller.enqueue(encoder.encode(sseEvent('response.output_item.added', {
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { id: itemId, type: 'message', status: 'in_progress', role: 'assistant', content: [] },
+    })))
+    controller.enqueue(encoder.encode(sseEvent('response.content_part.added', {
+      type: 'response.content_part.added',
+      item_id: itemId,
+      output_index: 0,
+      content_index: 0,
+      part: { type: 'output_text', text: '', annotations: [] },
+    })))
+  }
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         if (!started) {
           started = true
-          controller.enqueue(encoder.encode(sseEvent('response.created', responseCreatedPayload(responseId, model))))
+          emitStart(controller)
         }
         const { done, value } = await reader.read()
         if (!done) {
@@ -127,20 +144,51 @@ function transformStream(stream: ReadableStream<Uint8Array>, model: string): Rea
                 const delta = payload?.choices?.[0]?.delta?.content
                 if (typeof delta === 'string' && delta) {
                   text += delta
-                  controller.enqueue(encoder.encode(sseEvent('response.output_text.delta', { type: 'response.output_text.delta', delta })))
+                  controller.enqueue(encoder.encode(sseEvent('response.output_text.delta', {
+                    type: 'response.output_text.delta',
+                    item_id: itemId,
+                    output_index: 0,
+                    content_index: 0,
+                    delta,
+                  })))
                 }
                 if (payload?.usage) usage = payload.usage
               } catch {
-                // Ignore incomplete or provider-specific SSE payloads.
+                // Ignore provider-specific SSE frames that do not contain JSON chat deltas.
               }
             }
           }
           return
         }
+
         buffer += decoder.decode()
-        const completed = responsePayload({ gateway_request_id: responseId, choices: [{ message: { content: text } }], usage }, model)
+        const item = {
+          id: itemId,
+          type: 'message',
+          status: 'completed',
+          role: 'assistant',
+          content: [{ type: 'output_text', text, annotations: [] }],
+        }
+        const completed = responsePayload({
+          gateway_request_id: responseId.replace(/^resp_/, ''),
+          choices: [{ message: { content: text } }],
+          usage,
+        }, model)
         completed.id = responseId
-        controller.enqueue(encoder.encode(sseEvent('response.completed', completed)))
+        completed.output = [item]
+
+        controller.enqueue(encoder.encode(sseEvent('response.output_text.done', {
+          type: 'response.output_text.done', item_id: itemId, output_index: 0, content_index: 0, text,
+        })))
+        controller.enqueue(encoder.encode(sseEvent('response.content_part.done', {
+          type: 'response.content_part.done', item_id: itemId, output_index: 0, content_index: 0,
+          part: { type: 'output_text', text, annotations: [] },
+        })))
+        controller.enqueue(encoder.encode(sseEvent('response.output_item.done', {
+          type: 'response.output_item.done', output_index: 0, item,
+        })))
+        controller.enqueue(encoder.encode(sseEvent('response.completed', { type: 'response.completed', response: completed })))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
         controller.close()
       } catch (error) {
         controller.error(error)
