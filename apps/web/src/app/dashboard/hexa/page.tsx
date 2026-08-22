@@ -1,4 +1,5 @@
 import { HexaClient } from '@/components/HexaClient'
+import { TokenizedBackdrop } from '@/components/TokenizedBackdrop'
 import { requireUser } from '@/lib/auth'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 
@@ -44,5 +45,9 @@ export default async function HexaPage({
     ? params.model!
     : activeModels[0]?.id ?? ''
 
-  return <HexaClient models={activeModels} initialModel={initialModel} />
+  return (
+    <TokenizedBackdrop>
+      <HexaClient models={activeModels} initialModel={initialModel} />
+    </TokenizedBackdrop>
+  )
 }
