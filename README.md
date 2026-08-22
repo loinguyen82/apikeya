@@ -9,7 +9,7 @@ Cổng trung gian (API Gateway) thương mại hóa dịch vụ AI dành cho th�
 - `apps/gateway`: Cổng API Gateway siêu tốc sử dụng Hono (tương thích Cloudflare Workers / Node.js), định tuyến đa nguồn, xác thực SHA-256 API Key, xử lý SSE streaming song song với metering.
 - `apps/web`: Ứng dụng web Next.js 16 App Router cho Khách hàng (Hexa local token analyzer, Nạp tiền VietQR, Quản lý Key, Báo cáo chi tiêu) và Quản trị viên (Báo cáo Doanh thu/Lợi nhuận gộp, Quản lý bảng giá, Đối soát giao dịch).
 
-Hexa chạy cục bộ trong trình duyệt: nội dung dán vào không được gửi đến gateway/provider và không tạo usage hay chi phí.
+Hexa chạy cục bộ trong trình duyệt: raw input không được gửi đến gateway/provider và không tạo usage hay chi phí. Với model có mapping, Hexa tải Hugging Face tokenizer assets ở client và tokenize trong Web Worker; model chưa có mapping verified vẫn dùng local fallback có nhãn rõ ràng.
 - `supabase/migrations`: Cơ sở dữ liệu PostgreSQL, RLS, và các hàm RPC bảo mật (`SECURITY DEFINER`).
 
 ## Hướng dẫn Thiết lập & Chạy
@@ -22,10 +22,13 @@ Mở SQL Editor trên Supabase Dashboard và chạy lần lượt:
 4. `supabase/migrations/004_topup_expiry.sql`
 5. `supabase/migrations/005_logic_hardening.sql`
 6. `supabase/migrations/006_abuse_hardening.sql`
-7. `supabase/migrations/007_quota_hexa.sql`
-8. `supabase/seed.sql`
+7. `supabase/migrations/007_auth_bootstrap_fix.sql`
+8. `supabase/migrations/007_quota_hexa.sql`
+9. `supabase/migrations/008_api_key_first.sql`
+10. `supabase/migrations/009_hexa_hf_tokenizers.sql`
+11. `supabase/seed.sql`
 
-Database đã cài từ trước cần chạy lần lượt các migration còn thiếu, bao gồm `004` đến `007`, trước khi deploy code mới.
+Database đã cài từ trước cần chạy lần lượt mọi migration còn thiếu, đặc biệt `009_hexa_hf_tokenizers.sql` để catalog hiện tại nhận mapping tokenizer cho Hexa. `seed.sql` cũng chứa cùng metadata để fresh install không phụ thuộc vào dữ liệu có sẵn trước migration `009`.
 
 ### 2. Cấu hình Môi trường
 Sao chép `.env.example` thành `.env.local` trong `apps/web` và điền các thông tin:
