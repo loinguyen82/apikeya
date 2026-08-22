@@ -21,45 +21,54 @@ jobs:
       - run: npm install --no-save @playwright/test@1.55.0
       - run: npx playwright install --with-deps chromium
       - name: Capture production Quota
+        continue-on-error: true
         env:
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
         run: |
+          mkdir -p artifacts
           node <<'NODE'
           const { chromium } = require('@playwright/test')
           const fs = require('fs')
           ;(async () => {
-            const browser = await chromium.launch({ headless: true })
-            const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 })
-            const email = process.env.E2E_EMAIL || ''
-            const password = process.env.E2E_PASSWORD || ''
-
-            if (email && password) {
-              await page.goto('https://apivn.tech/login', { waitUntil: 'networkidle' })
-              await page.getByLabel('Email').fill(email)
-              await page.getByLabel('Mật khẩu').fill(password)
-              await page.getByRole('button', { name: 'Đăng nhập' }).click()
-            } else {
-              const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`
-              await page.goto('https://apivn.tech/signup', { waitUntil: 'networkidle' })
-              await page.getByLabel('Tên hiển thị').fill('Quota Capture')
-              await page.getByLabel('Email').fill(`quota-capture-${suffix}@example.com`)
-              await page.getByLabel('Mật khẩu').fill(`Quota-${suffix}!`)
-              await page.getByRole('button', { name: 'Tạo tài khoản' }).click()
+            let browser
+            try {
+              browser = await chromium.launch({ headless: true })
+              const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 })
+              const email = process.env.E2E_EMAIL || ''
+              const password = process.env.E2E_PASSWORD || ''
+              if (email && password) {
+                await page.goto('https://apivn.tech/login', { waitUntil: 'networkidle' })
+                await page.getByLabel('Email').fill(email)
+                await page.getByLabel('Mật khẩu').fill(password)
+                await page.getByRole('button', { name: 'Đăng nhập' }).click()
+              } else {
+                const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`
+                await page.goto('https://apivn.tech/signup', { waitUntil: 'networkidle' })
+                await page.getByLabel('Tên hiển thị').fill('Quota Capture')
+                await page.getByLabel('Email').fill(`quota-capture-${suffix}@example.com`)
+                await page.getByLabel('Mật khẩu').fill(`Quota-${suffix}!`)
+                await page.getByRole('button', { name: 'Tạo tài khoản' }).click()
+              }
+              await page.waitForURL(/\/dashboard/, { timeout: 30000 })
+              await page.goto('https://apivn.tech/dashboard/quota', { waitUntil: 'networkidle' })
+              await page.waitForTimeout(1000)
+              await page.screenshot({ path: 'artifacts/quota-live.png', fullPage: true })
+              fs.writeFileSync('artifacts/quota-capture-status.txt', `PASS\nurl=${page.url()}\n`)
+            } catch (error) {
+              fs.writeFileSync('artifacts/quota-capture-status.txt', `FAIL\n${error?.stack || error}\n`)
+              process.exitCode = 1
+            } finally {
+              if (browser) await browser.close()
             }
-
-            await page.waitForURL(/\/dashboard/, { timeout: 30000 })
-            await page.goto('https://apivn.tech/dashboard/quota', { waitUntil: 'networkidle' })
-            await page.waitForTimeout(1000)
-            fs.mkdirSync('artifacts', { recursive: true })
-            await page.screenshot({ path: 'artifacts/quota-live.png', fullPage: true })
-            await browser.close()
-          })().catch((error) => { console.error(error); process.exit(1) })
+          })()
           NODE
-      - name: Commit screenshot
+      - name: Commit capture result
+        if: always()
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add artifacts/quota-live.png
-          git commit -m "chore: add live Quota screenshot" || exit 0
+          git add artifacts/quota-capture-status.txt
+          test -f artifacts/quota-live.png && git add artifacts/quota-live.png || true
+          git commit -m "chore: add live Quota capture result" || exit 0
           git push
