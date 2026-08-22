@@ -1,6 +1,13 @@
 name: Deploy APIVN Gateway to Cloudflare
 
 on:
+  push:
+    branches:
+      - cloudflare-migration
+    paths:
+      - 'apps/gateway/**'
+      - 'packages/contracts/**'
+      - '.github/workflows/cloudflare-gateway-deploy.yml'
   workflow_dispatch:
 
 concurrency:
