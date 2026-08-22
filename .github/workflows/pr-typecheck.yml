@@ -1,18 +1,24 @@
-name: PR Typecheck
+name: PR Checks
 
 on:
   pull_request:
     branches: [main]
 
 jobs:
-  typecheck:
+  checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm install --no-audit --no-fund
-      - run: npm run typecheck --workspace @aiapi/web
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck web
+        run: npm run typecheck --workspace @aiapi/web
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @aiapi/gateway
+      - name: Test gateway
+        run: npm test --workspace @aiapi/gateway
