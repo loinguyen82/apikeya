@@ -16,6 +16,8 @@ jobs:
   smoke:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'cloudflare-migration') }}
     runs-on: ubuntu-latest
+    env:
+      BASE: ${{ vars.CLOUDFLARE_WEB_URL || 'https://apivn.tech' }}
     steps:
       - name: Test public and auth flow edges
         env:
@@ -23,10 +25,11 @@ jobs:
         shell: bash
         run: |
           set -u
-          BASE='https://apivn-web.loi822004.workers.dev'
           OUT=/tmp/apivn-flow-smoke.md
           : > "$OUT"
           echo '## APIVN Cloudflare flow smoke test' >> "$OUT"
+          echo >> "$OUT"
+          echo "Target: $BASE" >> "$OUT"
           echo >> "$OUT"
 
           failures=0
