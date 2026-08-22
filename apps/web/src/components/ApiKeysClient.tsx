@@ -1,89 +1,202 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { formatVietnamDate, formatVietnamDateTime } from '@/lib/date'
 
-interface KeyItem { id: string; name: string; prefix: string; status: string; last_used_at: string | null; created_at: string }
+const API_KEY_SESSION_STORAGE_KEY = 'apivn.portal.apiKey'
+const PUBLIC_BASE_URL = 'https://api.apivn.tech/v1'
+
+interface KeyItem {
+  id: string
+  name: string
+  prefix: string
+  status: string
+  last_used_at: string | null
+  created_at: string
+}
 
 export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
   const [keys, setKeys] = useState<KeyItem[]>(initialKeys)
-  const [keyName, setKeyName] = useState('')
   const [creating, setCreating] = useState(false)
-  const [newKeyPlaintext, setNewKeyPlaintext] = useState<string | null>(null)
+  const [sessionKey, setSessionKey] = useState<string | null>(null)
+  const [showSecret, setShowSecret] = useState(false)
+  const [freshKey, setFreshKey] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState(false)
-  const [revokingId, setRevokingId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://ai-api-gateway.loi822004.workers.dev'
+
   const activeKey = keys.find((key) => key.status === 'active')
+  const hasSessionKey = Boolean(sessionKey && activeKey && sessionKey.startsWith(activeKey.prefix))
+  const maskedKey = activeKey ? `${activeKey.prefix}${'•'.repeat(24)}` : 'Chưa có API key'
+  const displayedKey = showSecret && hasSessionKey ? sessionKey! : maskedKey
 
-  async function handleCreateKey(e: React.FormEvent) {
-    e.preventDefault(); setCreating(true); setErrorMsg(null)
+  useEffect(() => {
     try {
-      const res = await fetch('/api/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: keyName.trim() || 'API Key' }) })
-      const json = await res.json()
-      if (!res.ok || json.error) setErrorMsg(json.error || 'Không thể tạo API key')
-      else {
-        setNewKeyPlaintext(json.plaintext)
-        setKeys([
-          { id: json.key.id, name: json.key.name, prefix: json.key.prefix, status: 'active', last_used_at: null, created_at: json.key.created_at || new Date().toISOString() },
-          ...keys.map((key) => key.status === 'active' ? { ...key, status: 'revoked' } : key),
-        ])
-        setKeyName('')
+      if (!activeKey) {
+        window.sessionStorage.removeItem(API_KEY_SESSION_STORAGE_KEY)
+        setSessionKey(null)
+        return
       }
-    } catch { setErrorMsg('Lỗi kết nối máy chủ') } finally { setCreating(false) }
-  }
 
-  async function handleRevoke(keyId: string) {
-    if (!confirm('Thu hồi API key này? Ứng dụng đang dùng key sẽ ngừng truy cập và bạn cần tạo key mới trước lần đăng nhập tiếp theo.')) return
-    setRevokingId(keyId)
-    try {
-      const res = await fetch('/api/keys', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: keyId }) })
-      if (res.ok) setKeys(keys.map((k) => k.id === keyId ? { ...k, status: 'revoked' } : k))
-      else setErrorMsg('Không thể thu hồi API key')
-    } catch { setErrorMsg('Không thể thu hồi API key') } finally { setRevokingId(null) }
-  }
+      const stored = window.sessionStorage.getItem(API_KEY_SESSION_STORAGE_KEY)
+      if (stored && stored.startsWith(activeKey.prefix)) {
+        setSessionKey(stored)
+      } else {
+        if (stored) window.sessionStorage.removeItem(API_KEY_SESSION_STORAGE_KEY)
+        setSessionKey(null)
+      }
+    } catch {
+      setSessionKey(null)
+    }
+  }, [activeKey?.id, activeKey?.prefix])
 
-  async function copyKey(text: string) {
+  async function handleCreateOrReset() {
+    if (activeKey && !confirm('Reset API Key? Key hiện tại sẽ bị thu hồi ngay và mọi app đang dùng key cũ sẽ ngừng truy cập.')) return
+
+    setCreating(true)
+    setErrorMsg(null)
     setCopyError(false)
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2200) } catch { setCopyError(true) }
+    setFreshKey(false)
+
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Master API Key' }),
+      })
+      const json = await res.json()
+
+      if (!res.ok || json.error) {
+        setErrorMsg(json.error || 'Không thể tạo API key')
+        return
+      }
+
+      const plaintext = String(json.plaintext || '')
+      const nextKey: KeyItem = {
+        id: json.key.id,
+        name: json.key.name || 'Master API Key',
+        prefix: json.key.prefix,
+        status: 'active',
+        last_used_at: null,
+        created_at: json.key.created_at || new Date().toISOString(),
+      }
+
+      setKeys([
+        nextKey,
+        ...keys.map((key) => key.status === 'active' ? { ...key, status: 'revoked' } : key),
+      ])
+      setSessionKey(plaintext)
+      setShowSecret(true)
+      setFreshKey(true)
+
+      try {
+        window.sessionStorage.setItem(API_KEY_SESSION_STORAGE_KEY, plaintext)
+      } catch {
+        // The freshly generated key remains visible in React state for this page.
+      }
+    } catch {
+      setErrorMsg('Lỗi kết nối máy chủ')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function handleToggleSecret() {
+    setErrorMsg(null)
+    if (!activeKey) return
+    if (!hasSessionKey) {
+      setShowSecret(false)
+      setErrorMsg('Full API key không còn trong phiên này. Hãy đăng nhập lại bằng API key hiện tại, hoặc Reset API Key nếu bạn đã mất key.')
+      return
+    }
+    setShowSecret((value) => !value)
+  }
+
+  async function handleCopyKey() {
+    setCopyError(false)
+    setErrorMsg(null)
+    if (!hasSessionKey || !sessionKey) {
+      setErrorMsg('Không thể copy full key vì key không còn trong phiên hiện tại. Hãy đăng nhập lại bằng key hoặc Reset API Key.')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(sessionKey)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2200)
+    } catch {
+      setCopyError(true)
+    }
   }
 
   return (
     <div className="page-stack">
       <header className="page-head">
-        <div className="page-head-copy"><div className="eyebrow">API key</div><h1>Credential của tài khoản</h1><p>Mỗi tài khoản chỉ có một API key active. Key này dùng cả để gọi API và đăng nhập Developer Console.</p></div>
+        <div className="page-head-copy">
+          <div className="eyebrow">API key</div>
+          <h1>Một key cho toàn bộ APIVN</h1>
+          <p>Dùng cùng API key này cho mọi model, công cụ và để đăng nhập Developer Console.</p>
+        </div>
+        <span className={`status-chip ${activeKey ? 'success' : ''}`}>{activeKey ? '1 key · Active' : '0 key'}</span>
       </header>
 
       {errorMsg && <div className="notice danger" role="alert">{errorMsg}</div>}
-      {newKeyPlaintext && (
-        <section className="surface surface-pad">
-          <div className="page-head" style={{ marginBottom: 14 }}><div><span className="status-chip success">Key mới đã active</span><h3 style={{ marginTop: 8 }}>Lưu secret trước khi đóng</h3><p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Secret chỉ hiển thị một lần. Key cũ đã bị thu hồi.</p></div><button className="btn secondary" type="button" onClick={() => setNewKeyPlaintext(null)}>Đã lưu</button></div>
-          <div className="secret-box"><code>{newKeyPlaintext}</code><button className="btn" type="button" onClick={() => copyKey(newKeyPlaintext)}>{copied ? 'Đã sao chép' : 'Sao chép'}</button></div>
-          {copyError && <div className="notice warning" style={{ marginTop: 10 }}>Trình duyệt chặn clipboard. Hãy sao chép secret thủ công.</div>}
-        </section>
+      {freshKey && (
+        <div className="notice success" role="status">
+          API key mới đã active. Key cũ đã bị thu hồi. Hãy copy key mới trước khi kết thúc phiên đăng nhập này.
+        </div>
       )}
 
-      <div className="key-grid">
-        <section className="surface surface-pad">
-          <div className="eyebrow">Credential</div><h3 style={{ margin: '6px 0 8px' }}>{activeKey ? 'Rotate API key' : 'Tạo API key'}</h3>
-          <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{activeKey ? `Key active hiện tại: ${activeKey.prefix}••••••. Tạo key mới sẽ thu hồi key này ngay.` : 'Tạo credential đầu tiên để đăng nhập và gọi API.'}</p>
-          <form onSubmit={handleCreateKey} className="page-stack" style={{ gap: 14 }}>
-            <div className="field"><label htmlFor="key-name">Tên key</label><input id="key-name" className="input" type="text" placeholder="Production" value={keyName} onChange={(e) => setKeyName(e.target.value)} /><span className="field-hint">Quota và số dư vẫn thuộc cùng wallet khi rotate key.</span></div>
-            <button className="btn" type="submit" disabled={creating}>{creating ? 'Đang xử lý…' : activeKey ? 'Rotate API key' : 'Tạo API key'}</button>
-          </form>
-          <div className="quick-config" style={{ marginTop: 20 }}><div className="config-item"><small>Base URL</small><code>{gatewayUrl}/v1</code></div><div className="config-item"><small>Auth header</small><code>Bearer sk-...</code></div></div>
-        </section>
+      <section className="surface surface-pad">
+        <div className="surface-head" style={{ padding: 0, marginBottom: 14 }}>
+          <div>
+            <div className="eyebrow">API key mới nhất</div>
+            <h3 style={{ margin: '6px 0 4px' }}>Master API Key</h3>
+            <p className="muted" style={{ fontSize: 13, margin: 0 }}>Credential duy nhất của tài khoản.</p>
+          </div>
+          {activeKey && <span className="status-chip success">Active</span>}
+        </div>
 
-        <section className="surface model-table-shell">
-          <div className="surface-head"><h3>Lịch sử key</h3><span className="status-chip">{activeKey ? '1 active' : '0 active'}</span></div>
-          {keys.length > 0 ? (
-            <div className="table-scroll"><table className="data-table"><thead><tr><th>Tên</th><th>Prefix</th><th>Trạng thái</th><th>Dùng gần nhất</th><th>Ngày tạo</th><th></th></tr></thead><tbody>
-              {keys.map((k) => <tr key={k.id}><td><strong>{k.name}</strong></td><td><code>{k.prefix}••••••</code></td><td><span className={`status-chip ${k.status === 'active' ? 'success' : ''}`}>{k.status === 'active' ? 'Active' : 'Revoked'}</span></td><td>{k.last_used_at ? formatVietnamDateTime(k.last_used_at) : 'Chưa dùng'}</td><td>{formatVietnamDate(k.created_at)}</td><td>{k.status === 'active' && <button type="button" className="btn secondary" disabled={revokingId === k.id} onClick={() => handleRevoke(k.id)}>{revokingId === k.id ? 'Đang xử lý' : 'Thu hồi'}</button>}</td></tr>)}
-            </tbody></table></div>
-          ) : <div className="surface-body"><div className="empty-card"><div className="empty-icon">K</div><strong>Chưa có API key</strong><p>Tạo key đầu tiên ở cột bên trái để kết nối SDK và đăng nhập lần sau.</p></div></div>}
-        </section>
-      </div>
+        {activeKey ? (
+          <>
+            <div className="secret-box">
+              <code>{displayedKey}</code>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn secondary" type="button" onClick={handleToggleSecret}>{showSecret && hasSessionKey ? 'Ẩn' : '👁 Hiện'}</button>
+                <button className="btn" type="button" onClick={handleCopyKey}>{copied ? 'Đã sao chép' : 'Copy'}</button>
+              </div>
+            </div>
+
+            {copyError && <div className="notice warning" style={{ marginTop: 10 }}>Trình duyệt chặn clipboard. Hãy chọn và sao chép key thủ công.</div>}
+
+            <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+              APIVN chỉ lưu hash của API key trên server. Full key được giữ tạm trong phiên tab sau khi bạn đăng nhập bằng key hoặc vừa reset; không lưu vào localStorage.
+            </p>
+
+            <div className="quick-config" style={{ marginTop: 18 }}>
+              <div className="config-item"><small>Base URL</small><code>{PUBLIC_BASE_URL}</code></div>
+              <div className="config-item"><small>Auth header</small><code>Authorization: Bearer sk-apivn-...</code></div>
+              <div className="config-item"><small>Last used</small><code>{activeKey.last_used_at ? formatVietnamDateTime(activeKey.last_used_at) : 'Chưa dùng'}</code></div>
+              <div className="config-item"><small>Created</small><code>{formatVietnamDate(activeKey.created_at)}</code></div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+              <button className="btn secondary" type="button" disabled={creating} onClick={handleCreateOrReset}>
+                {creating ? 'Đang reset…' : 'Reset API Key'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="empty-card">
+            <div className="empty-icon">K</div>
+            <strong>Chưa có API key</strong>
+            <p>Nạp tiền thành công rồi tạo key đầu tiên. Từ đó bạn dùng đúng một key cho toàn bộ APIVN.</p>
+            <button className="btn" type="button" disabled={creating} onClick={handleCreateOrReset}>
+              {creating ? 'Đang tạo…' : 'Tạo API Key'}
+            </button>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
