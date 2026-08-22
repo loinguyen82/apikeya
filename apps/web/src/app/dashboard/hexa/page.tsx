@@ -1,4 +1,4 @@
-import { HexaClient } from '@/components/HexaClient'
+import { HexaClientV2 } from '@/components/HexaClientV2'
 import { requireUser } from '@/lib/auth'
 import { createAdminSupabase } from '@/lib/supabase/admin'
 
@@ -44,5 +44,5 @@ export default async function HexaPage({
     ? params.model!
     : activeModels[0]?.id ?? ''
 
-  return <HexaClient models={activeModels} initialModel={initialModel} />
+  return <HexaClientV2 models={activeModels} initialModel={initialModel} />
 }
