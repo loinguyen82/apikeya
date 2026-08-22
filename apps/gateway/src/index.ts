@@ -24,7 +24,7 @@ app.use(
 
 app.get('/healthz', (c) => {
   c.executionCtx.waitUntil(ensureTelegramWebhook(c.env))
-  return c.json({ ok: true, service: 'gateway', version: '0.4.3' })
+  return c.json({ ok: true, service: 'gateway', version: '0.4.4' })
 })
 
 app.post('/internal/telegram/model-health', async (c) => {
