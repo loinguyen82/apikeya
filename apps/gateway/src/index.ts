@@ -7,7 +7,8 @@ import { modelsRoute } from './routes/models.js'
 import { internalPlaygroundRoute } from './routes/internal-playground.js'
 import { responsesRoute } from './routes/responses.js'
 import { messagesRoute } from './routes/messages.js'
-import { handleTelegramUpdate } from './monitor/model-health.js'
+import { handleTelegramUpdate, sendTelegramMessage } from './monitor/model-health.js'
+import { ensureTelegramWebhook } from './monitor/telegram-webhook.js'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -20,7 +21,10 @@ app.use(
   })
 )
 
-app.get('/healthz', (c) => c.json({ ok: true, service: 'gateway', version: '0.4.1' }))
+app.get('/healthz', (c) => {
+  c.executionCtx.waitUntil(ensureTelegramWebhook(c.env))
+  return c.json({ ok: true, service: 'gateway', version: '0.4.2' })
+})
 
 app.post('/internal/telegram/model-health', async (c) => {
   const secret = c.env.TELEGRAM_WEBHOOK_SECRET
@@ -31,8 +35,27 @@ app.post('/internal/telegram/model-health', async (c) => {
     return c.json({ ok: false, error: 'unauthorized' }, 401)
   }
 
-  const update = await c.req.json().catch(() => null)
+  const update = await c.req.json().catch(() => null) as any
   if (!update) return c.json({ ok: false, error: 'invalid_update' }, 400)
+
+  const incomingChatId = update?.message?.chat?.id == null ? '' : String(update.message.chat.id)
+  const text = typeof update?.message?.text === 'string' ? update.message.text.trim() : ''
+  const isCommand = text.startsWith('/')
+
+  if (
+    incomingChatId &&
+    isCommand &&
+    c.env.TELEGRAM_CHAT_ID &&
+    incomingChatId !== c.env.TELEGRAM_CHAT_ID
+  ) {
+    c.executionCtx.waitUntil(sendTelegramMessage(
+      c.env,
+      incomingChatId,
+      `🔐 Bot chưa được cấp cho chat này.\nChat ID của group/chat hiện tại: ${incomingChatId}\nHãy cập nhật Cloudflare secret TELEGRAM_CHAT_ID thành ID này rồi gửi /status lại.`
+    ))
+    return c.json({ ok: true, chat_mismatch: true })
+  }
+
   await handleTelegramUpdate(c.env, update, (promise) => c.executionCtx.waitUntil(promise))
   return c.json({ ok: true })
 })
