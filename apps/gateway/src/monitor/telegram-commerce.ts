@@ -60,10 +60,13 @@ type TopupResponse = {
   topupId?: string
   amount?: number
   bonus?: number
-  description?: string
   expiresAt?: string
-  checkoutUrl?: string
-  qrCode?: string | null
+  qrUrl?: string
+  bankId?: string
+  bankName?: string
+  accountNo?: string
+  accountName?: string
+  memo?: string
   error?: string
 }
 
@@ -91,6 +94,25 @@ async function sendMessage(
   if (response && !response.ok) {
     console.error('telegram commerce sendMessage failed', response.status, (await response.text()).slice(0, 240))
   }
+}
+
+async function sendPhoto(
+  env: Env,
+  chatId: string,
+  photoUrl: string,
+  caption: string,
+): Promise<boolean> {
+  const response = await telegramApi(env, 'sendPhoto', {
+    chat_id: chatId,
+    photo: photoUrl,
+    caption,
+  })
+  if (!response) return false
+  if (!response.ok) {
+    console.error('telegram commerce sendPhoto failed', response.status, (await response.text()).slice(0, 240))
+    return false
+  }
+  return true
 }
 
 async function deleteMessage(env: Env, chatId: string, messageId?: number): Promise<void> {
@@ -151,7 +173,6 @@ async function linkApiKey(
     return { ok: false, message: 'API key đã hết hạn.' }
   }
 
-  // Proof of API key ownership is enough to move this APIVN account to the current Telegram user.
   await db
     .from('telegram_account_links')
     .delete()
@@ -200,7 +221,7 @@ async function showTopupMenu(env: Env, chatId: string, telegramUserId: string) {
   await sendMessage(
     env,
     chatId,
-    '💰 Chọn số tiền muốn nạp.\n\n• Tối thiểu: 1.000đ\n• 200k: +2%\n• 500k: +5%\n• 1 triệu: +8%\n• Đơn PayOS hết hạn sau 30 phút.',
+    '💰 Chọn số tiền muốn nạp.\n\n• Tối thiểu: 1.000đ\n• 200k: +2%\n• 500k: +5%\n• 1 triệu: +8%\n• Đơn VietQR hết hạn sau 30 phút.',
     TOPUP_KEYBOARD,
   )
 }
@@ -230,6 +251,49 @@ async function showBalance(env: Env, chatId: string, telegramUserId: string) {
   )
 }
 
+function topupCaption(body: TopupResponse, fallbackAmount: number): string {
+  const amount = body.amount ?? fallbackAmount
+  const bonus = body.bonus ?? 0
+  return [
+    '💰 Đơn nạp APIVN',
+    '',
+    `Số tiền: ${formatVnd(amount)}`,
+    ...(bonus > 0 ? [`🎁 Bonus: +${formatVnd(bonus)}`] : []),
+    body.bankName ? `Ngân hàng: ${body.bankName}` : '',
+    body.accountNo ? `Số tài khoản: ${body.accountNo}` : '',
+    body.accountName ? `Chủ tài khoản: ${body.accountName}` : '',
+    body.memo ? `Nội dung BẮT BUỘC: ${body.memo}` : '',
+    'Hạn thanh toán: 30 phút',
+  ].filter(Boolean).join('\n')
+}
+
+async function showVietQrTopup(
+  env: Env,
+  chatId: string,
+  body: TopupResponse,
+  fallbackAmount: number,
+  reused: boolean,
+) {
+  const caption = topupCaption(body, fallbackAmount)
+  if (body.qrUrl) {
+    const sent = await sendPhoto(env, chatId, body.qrUrl, caption)
+    if (!sent) {
+      await sendMessage(env, chatId, `${caption}\n\nQR: ${body.qrUrl}`)
+    }
+  } else {
+    await sendMessage(env, chatId, caption)
+  }
+
+  await sendMessage(
+    env,
+    chatId,
+    reused
+      ? '⏳ Bạn đã có một đơn nạp đang chờ. Bot gửi lại đúng QR hiện tại; không tạo đơn trùng. Sau khi chuyển khoản, bấm “🔄 Kiểm tra nạp”.'
+      : '✅ Đã tạo yêu cầu nạp. Chuyển đúng số tiền và đúng nội dung, sau đó bấm “🔄 Kiểm tra nạp”.',
+    MAIN_KEYBOARD,
+  )
+}
+
 async function createTopup(env: Env, chatId: string, telegramUserId: string, amount: number) {
   const link = await requireLink(env, telegramUserId, chatId)
   if (!link) return
@@ -249,35 +313,27 @@ async function createTopup(env: Env, chatId: string, telegramUserId: string, amo
       signal: AbortSignal.timeout(20_000),
     })
   } catch {
-    await sendMessage(env, chatId, '❌ Không kết nối được hệ thống thanh toán. Thử lại sau.', MAIN_KEYBOARD)
+    await sendMessage(env, chatId, '❌ Không kết nối được hệ thống nạp tiền. Thử lại sau.', MAIN_KEYBOARD)
     return
   }
 
   const body = await response.json().catch(() => null) as TopupResponse | null
-  if (!response.ok || !body?.checkoutUrl) {
+  const activeExisting = response.status === 409 && body?.error === 'ACTIVE_TOPUP_EXISTS' && Boolean(body.qrUrl)
+
+  if (activeExisting && body) {
+    await showVietQrTopup(env, chatId, body, body.amount ?? amount, true)
+    return
+  }
+
+  if (!response.ok || !body?.ok || !body.qrUrl) {
     const message = body?.error === 'ACTIVE_TOPUP_EXISTS'
-      ? '⏳ Bạn đang có một đơn nạp chưa hết hạn. Bấm “Kiểm tra nạp” hoặc chờ đơn cũ hết hạn.'
-      : body?.error === 'PAYOS_NOT_CONFIGURED' || body?.error === 'billing_not_configured'
-        ? '❌ Thanh toán PayOS hiện chưa sẵn sàng.'
-        : '❌ Không thể tạo đơn nạp. Vui lòng thử lại.'
+      ? '⏳ Bạn đang có một đơn nạp chưa hết hạn. Bấm “🔄 Kiểm tra nạp” hoặc chờ đơn cũ hết hạn.'
+      : '❌ Không thể tạo đơn VietQR. Vui lòng thử lại.'
     await sendMessage(env, chatId, message, MAIN_KEYBOARD)
     return
   }
 
-  const bonusText = (body.bonus ?? 0) > 0 ? `\n🎁 Bonus: +${formatVnd(body.bonus ?? 0)}` : ''
-  await sendMessage(env, chatId, [
-    '💰 Đơn nạp APIVN',
-    '',
-    `Số tiền: ${formatVnd(body.amount ?? amount)}${bonusText}`,
-    `Nội dung: ${body.description ?? 'APIVN'}`,
-    'Hạn thanh toán: 30 phút',
-    '',
-    'Bấm nút dưới để mở QR/chuyển khoản PayOS.',
-  ].join('\n'), {
-    inline_keyboard: [[{ text: '💳 Mở QR / Thanh toán', url: body.checkoutUrl }]],
-  })
-
-  await sendMessage(env, chatId, 'Sau khi chuyển khoản, bấm “🔄 Kiểm tra nạp”.', MAIN_KEYBOARD)
+  await showVietQrTopup(env, chatId, body, amount, false)
 }
 
 async function checkLatestTopup(env: Env, chatId: string, telegramUserId: string) {
