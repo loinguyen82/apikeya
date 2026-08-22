@@ -28,9 +28,17 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.text()
-  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'http://localhost:8787'
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL?.replace(/\/+$/, '')
+  const internalToken = process.env.GATEWAY_INTERNAL_TOKEN
   const assertionSecret = process.env.GATEWAY_USER_ASSERTION_SECRET
-  if (!assertionSecret) return NextResponse.json({ error: { message: 'Gateway chưa cấu hình xác thực playground' } }, { status: 503 })
+
+  if (!gatewayUrl || !internalToken || !assertionSecret) {
+    return NextResponse.json(
+      { error: { message: 'Playground chưa được cấu hình đầy đủ trên máy chủ' } },
+      { status: 503 },
+    )
+  }
+
   const userAssertion = await hmacSha256Hex(assertionSecret, user.id)
 
   try {
@@ -38,12 +46,13 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-internal-token': process.env.GATEWAY_INTERNAL_TOKEN || '',
+        'x-internal-token': internalToken,
         'x-user-id': user.id,
         'x-user-assertion': `sha256=${userAssertion}`,
         'idempotency-key': crypto.randomUUID(),
       },
       body,
+      signal: AbortSignal.timeout(60_000),
     })
 
     return new NextResponse(upstream.body, {
@@ -54,9 +63,10 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (error: any) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError'
     return NextResponse.json(
-      { error: { message: 'Không kết nối được tới cổng AI Gateway: ' + error.message } },
-      { status: 500 }
+      { error: { message: timedOut ? 'AI Gateway phản hồi quá thời gian cho phép' : 'Không kết nối được tới AI Gateway' } },
+      { status: timedOut ? 504 : 502 },
     )
   }
 }
