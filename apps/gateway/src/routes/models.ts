@@ -12,7 +12,7 @@ modelsRoute.get('/', async (c) => {
     .neq('status', 'disabled')
     .order('display_name')
 
-  if (error) return c.json({ error: { message: 'Không tải được danh sách model' } }, 500)
+  if (error) return c.json({ error: { message: 'Không tải được danh sách model', type: 'server_error', code: 'models_unavailable' } }, 500)
 
   return c.json({
     object: 'list',

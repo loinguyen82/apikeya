@@ -1,11 +1,7 @@
 import type { NextConfig } from 'next'
 
-// Keep the public gateway endpoint centralized so docs, playground and API-key UI stay in sync.
 const nextConfig: NextConfig = {
   transpilePackages: ['@aiapi/contracts', '@aiapi/core'],
-  env: {
-    NEXT_PUBLIC_GATEWAY_BASE_URL: 'https://api.70-36-125-65.sslip.io',
-  },
   webpack(config) {
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),

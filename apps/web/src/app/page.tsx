@@ -1,120 +1,45 @@
 import Link from 'next/link'
+import { BrandLogo } from '@/components/BrandLogo'
+import { CopyButton } from '@/components/CopyButton'
+import { createServerSupabase } from '@/lib/supabase/server'
+import { formatVndFromMicros } from '@/lib/money'
 
-const models = [
-  { name: 'Kimi K2.6', price: '150đ / 1M', credit: '0,15 Credit', purpose: 'Code, chat dài, automation' },
-  { name: 'DeepSeek V4', price: '300đ / 1M', credit: '0,3 Credit', purpose: 'Reasoning và code tiết kiệm' },
-  { name: 'GPT-5.6 Luna', price: '600đ / 1M', credit: '0,6 Credit', purpose: 'Sáng tạo, coding và tác vụ thường ngày' },
-  { name: 'Claude Sonnet 5', price: '750đ / 1M', credit: '0,75 Credit', purpose: 'Lập trình và phân tích sâu' },
-  { name: 'GPT-5.6 Terra', price: '1.500đ / 1M', credit: '1,5 Credit', purpose: 'Đa năng, cân bằng' },
-  { name: 'GPT-5.6 Sol', price: '2.500đ / 1M', credit: '2,5 Credit', purpose: 'Reasoning kỹ thuật khó' },
-]
+function providerName(id: string) {
+  if (id.includes('claude')) return 'Anthropic'
+  if (id.includes('kimi')) return 'Moonshot'
+  if (id.includes('deepseek')) return 'DeepSeek'
+  if (id.includes('gemini')) return 'Google'
+  if (id.includes('glm')) return 'Zhipu AI'
+  if (id.includes('grok')) return 'xAI'
+  if (id.includes('qwen')) return 'Alibaba'
+  if (id.includes('minimax')) return 'MiniMax'
+  if (id.includes('gpt')) return 'OpenAI'
+  return 'APIVN route'
+}
 
-const providers = [
-  ['OpenAI', 'GPT'],
-  ['Anthropic', 'Claude'],
-  ['Kimi', 'Moonshot'],
-  ['DeepSeek', 'DeepSeek'],
-]
+function curlExample(baseUrl: string, model: string) {
+  return [`curl ${baseUrl}/chat/completions \\`, '  -H "Authorization: Bearer $APIVN_API_KEY" \\', '  -H "Content-Type: application/json" \\', `  -d '{"model":"${model}","messages":[{"role":"user","content":"Xin chào"}]}'`].join('\n')
+}
 
-export default function HomePage() {
-  return (
-    <>
-      <header className="topbar">
-        <div className="container row">
-          <Link href="/" className="landing-brand" aria-label="Apikeya home">
-            <span className="brand-mark">A</span>
-            <span>Apikeya</span>
-          </Link>
-
-          <div className="row" style={{ gap: '10px' }}>
-            <a href="#pricing" className="btn secondary" style={{ border: 'none' }}>Bảng giá</a>
-            <Link href="/docs" className="btn secondary" style={{ border: 'none' }}>Tài liệu</Link>
-            <Link href="/login" className="btn secondary">Đăng nhập bằng key</Link>
-            <Link href="/signup" className="btn">Bắt đầu</Link>
-          </div>
-        </div>
-      </header>
-
-      <main>
-        <section className="container hero-refresh">
-          <div className="hero-copy">
-            <div className="hero-eyebrow">API gateway cho developer Việt Nam</div>
-            <h1>Một API cho nhiều model. Một key cho cả API và Dashboard.</h1>
-            <p className="muted">
-              Tạo tài khoản không cần xác minh email, nạp bằng VNĐ rồi nhận API key. Sau đó dùng Claude, GPT, Kimi và DeepSeek qua một Base URL và đăng nhập Dashboard bằng chính key đó.
-            </p>
-
-            <div className="hero-actions">
-              <Link href="/signup" className="btn" style={{ padding: '12px 20px' }}>Bắt đầu từ 20.000đ</Link>
-              <a href="#pricing" className="btn secondary" style={{ padding: '12px 20px' }}>Xem bảng giá</a>
-            </div>
-
-            <div className="hero-proof" aria-label="Điểm nổi bật">
-              <span>Nạp từ 20.000đ</span>
-              <span>0 Credit miễn phí</span>
-              <span>Nạp xong mới mở key</span>
-              <span>1 user · 1 key active</span>
-            </div>
-          </div>
-
-          <div className="quickstart-card" aria-label="Quick start">
-            <div className="quickstart-head">
-              <strong>Quick start</strong>
-              <span>OpenAI-compatible</span>
-            </div>
-            <div className="code-panel">{`export OPENAI_BASE_URL=https://api.70-36-125-65.sslip.io/v1\nexport OPENAI_API_KEY=sk-...\n\ncodex --model gpt-5.6-luna`}</div>
-            <div className="gateway-status">
-              <div>
-                <strong>Key cũng là credential Dashboard</strong>
-                <div className="muted" style={{ fontSize: '12px' }}>Rotate key không reset số dư hay quota</div>
-              </div>
-              <span className="badge">6 model đã cấu hình</span>
-            </div>
-          </div>
-        </section>
-
-        <section className="container provider-strip" aria-label="Nhà cung cấp hỗ trợ">
-          {providers.map(([name, family]) => (
-            <div className="provider-chip" key={name}>
-              <strong>{name}</strong>
-              <span>{family}</span>
-            </div>
-          ))}
-        </section>
-
-        <section id="pricing" className="container" style={{ padding: '34px 20px 88px' }}>
-          <div className="section-heading">
-            <div>
-              <h2 style={{ fontSize: '28px', letterSpacing: '-0.03em' }}>Bảng giá model</h2>
-              <p className="muted" style={{ marginTop: '6px' }}>Flat total: tổng input + output token × đơn giá. 1 Credit = 1.000đ.</p>
-            </div>
-            <Link href="/docs" className="btn secondary">Xem cách tích hợp</Link>
-          </div>
-
-          <div className="pricing-shell">
-            <table className="pricing-table">
-              <thead><tr><th>Model</th><th>Phù hợp</th><th>Giá / 1M token</th><th></th></tr></thead>
-              <tbody>
-                {models.map((model) => (
-                  <tr key={model.name}>
-                    <td><div className="model-name"><span className="model-dot" /><strong>{model.name}</strong></div></td>
-                    <td className="model-purpose">{model.purpose}</td>
-                    <td><strong>{model.price}</strong><div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{model.credit}</div></td>
-                    <td style={{ textAlign: 'right' }}><Link href="/signup" style={{ color: 'var(--refresh-teal-hover)', fontWeight: 650 }}>Bắt đầu →</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </main>
-
-      <footer style={{ borderTop: '1px solid var(--refresh-line)', padding: '28px 0 38px', background: '#fff' }}>
-        <div className="container row">
-          <div className="landing-brand"><span className="brand-mark">A</span><span>Apikeya</span></div>
-          <p className="muted" style={{ fontSize: '13px' }}>API gateway · thanh toán VNĐ · dành cho developer Việt Nam</p>
-        </div>
-      </footer>
-    </>
-  )
+export default async function HomePage() {
+  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://api.apivn.tech').replace(/\/+$/, '')
+  const baseUrl = `${gatewayUrl}/v1`
+  const supabase = await createServerSupabase()
+  const { data: models } = await supabase.from('models').select('id,display_name,status,pricing_mode,retail_flat_micros_per_mtoken,retail_input_micros_per_mtoken,retail_output_micros_per_mtoken').neq('status', 'disabled').order('retail_flat_micros_per_mtoken', { ascending: true }).limit(8)
+  const liveModels = models ?? []
+  const sampleModel = liveModels[0]?.id ?? 'model-id'
+  const example = curlExample(baseUrl, sampleModel)
+  return <>
+    <header className="public-header"><div className="public-header-inner"><BrandLogo /><nav className="public-nav" aria-label="Điều hướng chính"><a href="#models">Models</a><a href="#pricing">Pricing</a><a href="#quick-api">API example</a><a href="#faq">FAQ</a><Link href="/docs">Docs</Link></nav><div className="public-actions"><Link href="/login" className="btn secondary">Đăng nhập</Link><Link href="/signup" className="btn">Bắt đầu</Link></div></div></header>
+    <main className="landing-main">
+      <section className="landing-hero"><div className="landing-hero-copy"><div className="eyebrow">OpenAI-compatible AI gateway</div><h1>Một API.<br /><span>Nhiều model AI.</span></h1><p>Dùng Claude, GPT, Kimi và DeepSeek qua một Base URL. Thanh toán bằng VNĐ, quản lý key và usage trong Developer Console gọn nhẹ.</p><div className="landing-hero-actions"><Link href="/signup" className="btn">Bắt đầu →</Link><a href="#pricing" className="btn secondary">Xem bảng giá</a></div><div className="landing-trust"><span>Một Base URL</span><span>Nhiều model</span><span>Thanh toán VNĐ</span><span>OpenAI compatible</span></div></div><div className="hero-console" aria-label="Ví dụ gọi API"><div className="hero-console-bar"><span className="hero-console-dots"><i /><i /><i /></span><span>request.sh</span><span>cURL</span></div><pre className="hero-console-code"><code>{example}</code></pre><div className="endpoint-strip"><code>{baseUrl}</code><CopyButton value={baseUrl} compact /></div></div></section>
+      <section id="models" className="landing-section"><div className="section-intro"><div className="eyebrow">Models</div><h2>Đổi model, không đổi cách tích hợp.</h2><p>Catalog dưới đây lấy trực tiếp từ database production, không phải mock data trên client.</p></div>{liveModels.length ? <div className="public-models">{liveModels.map((model: any) => <div className="public-model-row" key={model.id}><strong>{model.display_name}</strong><code>{model.id}</code><span>{providerName(model.id)}</span><span className={`status-chip ${model.status === 'active' ? 'success' : 'warning'}`}>{model.status === 'active' ? 'Online' : 'Degraded'}</span></div>)}</div> : <div className="empty-state"><strong>Catalog đang được cập nhật</strong><p>Không có model khả dụng để hiển thị lúc này.</p></div>}</section>
+      <section id="pricing" className="landing-section"><div className="section-intro"><div className="eyebrow">Pricing</div><h2>Giá minh bạch theo token.</h2><p>Nạp VNĐ vào wallet, các API Key trong account cùng dùng một số dư.</p></div><div className="surface model-table-shell">{liveModels.length ? <div className="table-scroll"><table className="pricing-table"><thead><tr><th>Model</th><th>Input / 1M</th><th>Output / 1M</th><th>Status</th></tr></thead><tbody>{liveModels.map((model: any) => <tr key={model.id}><td><strong>{model.display_name}</strong><div className="price-sub">{model.id}</div></td><td>{formatVndFromMicros(model.retail_input_micros_per_mtoken ?? model.retail_flat_micros_per_mtoken)}</td><td>{formatVndFromMicros(model.retail_output_micros_per_mtoken ?? model.retail_flat_micros_per_mtoken)}</td><td><span className={`status-chip ${model.status === 'active' ? 'success' : 'warning'}`}>{model.status === 'active' ? 'Online' : 'Degraded'}</span></td></tr>)}</tbody></table></div> : <div className="empty-state"><strong>Chưa có dữ liệu pricing</strong><p>Pricing sẽ xuất hiện khi model catalog khả dụng.</p></div>}</div></section>
+      <section id="quick-api" className="landing-section landing-api-section"><div className="section-intro"><div className="eyebrow">Quick API example</div><h2>Copy Base URL và gọi API.</h2><p>Authorization chuẩn Bearer; không có cơ chế xác thực riêng lạ.</p></div><div className="hero-console"><div className="hero-console-bar"><span>chat/completions</span><CopyButton value={example} compact /></div><pre className="hero-console-code"><code>{example}</code></pre></div></section>
+      <section className="landing-section"><div className="benefit-grid"><article><strong>Developer-first</strong><p>Đăng nhập, tạo key, copy Base URL và test model trong vài phút.</p></article><article><strong>Account-centric</strong><p>Account sở hữu wallet, keys và usage. API Key không phải session token.</p></article><article><strong>Predictable</strong><p>Error format thống nhất, pricing hiển thị rõ và không fake payment success.</p></article></div></section>
+      <section id="faq" className="landing-section"><div className="section-intro"><div className="eyebrow">FAQ</div><h2>Câu hỏi thường gặp.</h2></div><div className="faq-list"><details><summary>APIVN có dùng được với OpenAI SDK không?</summary><p>Có. Đặt API Key trong biến môi trường và đổi <code>baseURL</code> thành <code>{baseUrl}</code>.</p></details><details><summary>Các API Key có wallet riêng không?</summary><p>Không. Wallet thuộc account; mọi API Key active trong account dùng chung số dư.</p></details><details><summary>Có xem lại full secret được không?</summary><p>Không. Secret chỉ hiện một lần khi tạo hoặc rotate. Database chỉ lưu hash, prefix và bốn ký tự cuối.</p></details></div></section>
+      <section className="landing-section"><div className="landing-cta"><div><h2>Sẵn sàng gửi request đầu tiên?</h2><p>Tạo account miễn phí. Không cần nạp tiền trước khi xem Dashboard.</p></div><Link href="/signup" className="btn">Mở Developer Console</Link></div></section>
+    </main>
+    <footer className="public-footer"><div className="public-footer-inner"><BrandLogo /><span>OpenAI-compatible AI gateway · APIVN.tech</span></div></footer>
+  </>
 }

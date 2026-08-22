@@ -1,0 +1,79 @@
+name: Deploy APIVN Gateway to Cloudflare
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: apivn-cloudflare-gateway
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck gateway
+        run: npm run typecheck --workspace @aiapi/gateway
+
+      - name: Test gateway
+        run: npm test --workspace @aiapi/gateway
+
+      - name: Validate Worker secrets
+        working-directory: apps/gateway
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          secret_list="$(npx wrangler secret list --format=json)"
+          for required in \
+            SUPABASE_URL \
+            SUPABASE_SERVICE_ROLE_KEY \
+            A6API_BASE_URL \
+            A6API_KEY \
+            INTERNAL_ADMIN_TOKEN \
+            GATEWAY_USER_ASSERTION_SECRET; do
+            if ! printf '%s' "$secret_list" | jq -e --arg name "$required" \
+              'map(.name) | index($name) != null' >/dev/null; then
+              echo "::error::ai-api-gateway missing Worker secret: $required"
+              exit 1
+            fi
+          done
+
+      - name: Deploy gateway Worker
+        working-directory: apps/gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Verify custom domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..30}; do
+            health="$(curl -fsS --max-time 10 https://api.apivn.tech/healthz 2>/dev/null || true)"
+            if printf '%s' "$health" | jq -e \
+              '.ok == true and .service == "gateway"' >/dev/null 2>&1; then
+              curl -fsS --max-time 10 https://api.apivn.tech/v1/models \
+                | jq -e '.object == "list" and (.data | length > 0)' >/dev/null
+              echo 'api.apivn.tech is serving the gateway Worker.'
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::api.apivn.tech did not become healthy after deployment.'
+          exit 1

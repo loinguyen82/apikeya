@@ -34,9 +34,32 @@ async function markAmbiguousBestEffort(db: ReturnType<typeof adminDb>, requestId
   }
 }
 
+async function releaseKnownSafeFailure(
+  db: ReturnType<typeof adminDb>,
+  requestId: string,
+  errorCode: string,
+): Promise<void> {
+  try {
+    await releaseRequest(db, requestId, errorCode)
+  } catch (error) {
+    console.error('failed to release request after known-safe failure', { requestId, errorCode, error })
+    await markAmbiguousBestEffort(db, requestId, 'RELEASE_RECONCILE_REQUIRED')
+  }
+}
+
+async function auditWriteError(
+  operation: () => PromiseLike<{ error: unknown }>,
+): Promise<unknown | null> {
+  try {
+    return (await operation()).error
+  } catch (error) {
+    return error
+  }
+}
+
 function internalFailure(requestId: string, message: string): Response {
   return Response.json(
-    { error: { message, type: 'server_error', request_id: requestId } },
+    { error: { message, type: 'server_error', code: 'internal_error', request_id: requestId } },
     { status: 500, headers: { 'x-request-id': requestId } },
   )
 }
@@ -50,11 +73,12 @@ export async function executeChat(args: {
   idempotencyKey?: string
   executionCtx?: { waitUntil: (promise: Promise<any>) => void }
 }): Promise<Response> {
+  const startedAtMs = Date.now()
   const db = adminDb(args.env)
   const model = await loadRuntimeModel(db, args.body.model, upstreamSecrets(args.env))
   if (args.body.stream && !model.streamingEnabled) {
     return Response.json(
-      { error: { message: 'Model này chưa hỗ trợ stream qua gateway', type: 'invalid_request_error' } },
+      { error: { message: 'Model này chưa hỗ trợ stream qua gateway', type: 'invalid_request_error', code: 'stream_not_supported' } },
       { status: 400 }
     )
   }
@@ -83,6 +107,7 @@ export async function executeChat(args: {
         error: {
           message: 'Idempotency-Key này đã được dùng. Gateway không dispatch lại để tránh tạo hai tác vụ AI.',
           type: 'idempotency_replay',
+          code: 'idempotency_replay',
           request_id: reservedRow.id,
           status: reservedRow.status,
         },
@@ -95,55 +120,79 @@ export async function executeChat(args: {
   for (const candidate of model.providers) {
     if (args.body.stream && !candidate.supportsStreamUsage) continue
     const adapter = new OpenAICompatibleAdapter(candidate.providerId)
-    const { error: dispatchError } = await db
-      .from('api_requests')
-      .update({ status: 'dispatching', provider_id: candidate.providerId })
-      .eq('id', requestId)
+    const dispatchError = await auditWriteError(() =>
+      db
+        .from('api_requests')
+        .update({ status: 'dispatching', provider_id: candidate.providerId })
+        .eq('id', requestId)
+    )
     if (dispatchError) {
-      await markAmbiguousBestEffort(db, requestId, 'DISPATCH_AUDIT_WRITE_FAILED')
+      await releaseKnownSafeFailure(db, requestId, 'DISPATCH_AUDIT_WRITE_FAILED')
       return internalFailure(requestId, 'Gateway không thể ghi nhận trạng thái request')
     }
-    const { data: attempt, error: attemptError } = await db
-      .from('provider_attempts')
-      .insert({
-        api_request_id: requestId,
-        provider_id: candidate.providerId,
-        upstream_model: candidate.upstreamModel,
-        priority_snapshot: candidate.priority,
-        upstream_input_micros_per_mtoken_snapshot: candidate.upstreamInputMicrosPerMToken,
-        upstream_output_micros_per_mtoken_snapshot: candidate.upstreamOutputMicrosPerMToken,
-        status: 'dispatching',
-      })
-      .select('id')
-      .single()
+    let attempt: { id: string } | null = null
+    let attemptError: unknown = null
+    try {
+      const result = await db
+        .from('provider_attempts')
+        .insert({
+          api_request_id: requestId,
+          provider_id: candidate.providerId,
+          upstream_model: candidate.upstreamModel,
+          priority_snapshot: candidate.priority,
+          upstream_input_micros_per_mtoken_snapshot: candidate.upstreamInputMicrosPerMToken,
+          upstream_output_micros_per_mtoken_snapshot: candidate.upstreamOutputMicrosPerMToken,
+          status: 'dispatching',
+        })
+        .select('id')
+        .single()
+      attempt = result.data
+      attemptError = result.error
+    } catch (error) {
+      attemptError = error
+    }
 
     if (attemptError || !attempt) {
-      await markAmbiguousBestEffort(db, requestId, 'ATTEMPT_AUDIT_WRITE_FAILED')
+      await releaseKnownSafeFailure(db, requestId, 'ATTEMPT_AUDIT_WRITE_FAILED')
       return internalFailure(requestId, 'Gateway không thể ghi nhận lượt gọi upstream an toàn')
     }
 
-    const result = await adapter.invokeChat({
-      baseUrl: candidate.baseUrl,
-      apiKey: candidate.apiKey,
-      upstreamModel: candidate.upstreamModel,
-      body: args.body,
-      timeoutMs: candidate.timeoutMs,
-      safeNoChargeStatuses: candidate.safeNoChargeStatuses,
-    })
+    let result: Awaited<ReturnType<OpenAICompatibleAdapter['invokeChat']>>
+    try {
+      result = await adapter.invokeChat({
+        baseUrl: candidate.baseUrl,
+        apiKey: candidate.apiKey,
+        upstreamModel: candidate.upstreamModel,
+        body: args.body,
+        outputCap: reserve.maxOutputTokens,
+        timeoutMs: candidate.timeoutMs,
+        safeNoChargeStatuses: candidate.safeNoChargeStatuses,
+      })
+    } catch (error) {
+      console.error('provider adapter threw unexpectedly', { requestId, providerId: candidate.providerId, error })
+      await markAmbiguousBestEffort(db, requestId, 'PROVIDER_ADAPTER_RECONCILE_REQUIRED')
+      return internalFailure(requestId, 'Gateway cannot confirm the upstream result')
+    }
 
     if ('retryClass' in result) {
       lastFailure = result
-      const { error: attemptUpdateError } = await db
-        .from('provider_attempts')
-        .update({
-          status: result.retryClass === 'safe' ? 'safe_failed' : 'ambiguous_failed',
-          error_code: result.code,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', attempt.id)
+      const attemptUpdateError = await auditWriteError(() =>
+        db
+          .from('provider_attempts')
+          .update({
+            status: result.retryClass === 'safe' ? 'safe_failed' : 'ambiguous_failed',
+            error_code: result.code,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', attempt.id)
+      )
 
       if (attemptUpdateError) {
-        await markAmbiguousBestEffort(db, requestId, 'PROVIDER_FAILURE_AUDIT_WRITE_FAILED')
+        if (result.retryClass === 'safe') {
+          await releaseKnownSafeFailure(db, requestId, 'PROVIDER_FAILURE_AUDIT_WRITE_FAILED')
+        } else {
+          await markAmbiguousBestEffort(db, requestId, 'PROVIDER_FAILURE_AUDIT_WRITE_FAILED')
+        }
         return internalFailure(requestId, 'Gateway không thể ghi nhận kết quả upstream')
       }
 
@@ -155,6 +204,7 @@ export async function executeChat(args: {
           error: {
             message: 'Upstream chưa phản hồi chắc chắn. Request không được tự gửi sang nguồn khác để tránh xử lý trùng.',
             type: 'upstream_error',
+            code: 'upstream_error',
             request_id: requestId,
           },
         },
@@ -170,16 +220,18 @@ export async function executeChat(args: {
         result.usage.inputTokens,
         result.usage.outputTokens
       )
-      const { error: attemptUpdateError } = await db
-        .from('provider_attempts')
-        .update({
-          status: 'succeeded',
-          provider_request_id: result.providerRequestId ?? null,
-          input_tokens: result.usage.inputTokens,
-          output_tokens: result.usage.outputTokens,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', attempt.id)
+      const attemptUpdateError = await auditWriteError(() =>
+        db
+          .from('provider_attempts')
+          .update({
+            status: 'succeeded',
+            provider_request_id: result.providerRequestId ?? null,
+            input_tokens: result.usage.inputTokens,
+            output_tokens: result.usage.outputTokens,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', attempt.id)
+      )
 
       if (attemptUpdateError) {
         await markAmbiguousBestEffort(db, requestId, 'PROVIDER_SUCCESS_AUDIT_WRITE_FAILED')
@@ -203,17 +255,21 @@ export async function executeChat(args: {
       }
 
       const payload = { ...result.payload, gateway_request_id: requestId }
-      return Response.json(payload, { status: 200, headers: { 'x-request-id': requestId } })
+      return Response.json(payload, { status: 200, headers: { 'x-request-id': requestId, 'x-apivn-latency-ms': String(Date.now() - startedAtMs), 'x-apivn-cost-micros': String(retailCost) } })
     }
 
-    const { error: streamingAttemptError } = await db
-      .from('provider_attempts')
-      .update({ status: 'streaming', provider_request_id: result.providerRequestId ?? null })
-      .eq('id', attempt.id)
-    const { error: streamingRequestError } = await db
-      .from('api_requests')
-      .update({ status: 'streaming', provider_id: candidate.providerId, provider_request_id: result.providerRequestId ?? null })
-      .eq('id', requestId)
+    const streamingAttemptError = await auditWriteError(() =>
+      db
+        .from('provider_attempts')
+        .update({ status: 'streaming', provider_request_id: result.providerRequestId ?? null })
+        .eq('id', attempt.id)
+    )
+    const streamingRequestError = await auditWriteError(() =>
+      db
+        .from('api_requests')
+        .update({ status: 'streaming', provider_id: candidate.providerId, provider_request_id: result.providerRequestId ?? null })
+        .eq('id', requestId)
+    )
     if (streamingAttemptError || streamingRequestError) {
       await Promise.allSettled([result.clientStream.cancel(), result.meterStream.cancel()])
       await markAmbiguousBestEffort(db, requestId, 'STREAMING_AUDIT_WRITE_FAILED')
@@ -257,14 +313,16 @@ export async function executeChat(args: {
           throw new Error('STREAM_SETTLEMENT_RECONCILE_REQUIRED')
         }
       } catch (e) {
-        const { error: attemptFailureAuditError } = await db
-          .from('provider_attempts')
-          .update({
-            status: 'ambiguous_failed',
-            error_code: 'STREAM_USAGE_RECONCILE_REQUIRED',
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', attempt.id)
+        const attemptFailureAuditError = await auditWriteError(() =>
+          db
+            .from('provider_attempts')
+            .update({
+              status: 'ambiguous_failed',
+              error_code: 'STREAM_USAGE_RECONCILE_REQUIRED',
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', attempt.id)
+        )
         if (attemptFailureAuditError) {
           console.error('failed to record stream reconciliation failure', { requestId, error: attemptFailureAuditError })
         }
@@ -293,8 +351,13 @@ export async function executeChat(args: {
     await markAmbiguousBestEffort(db, requestId, 'RELEASE_RECONCILE_REQUIRED')
     return internalFailure(requestId, 'Gateway chưa thể hoàn tất trạng thái request')
   }
+  const finalError = lastFailure?.code === 'UPSTREAM_TIMEOUT'
+    ? { status: 504, message: 'Upstream phản hồi quá thời gian cho phép', code: 'upstream_timeout' }
+    : lastFailure?.httpStatus === 429
+      ? { status: 429, message: 'Upstream đang giới hạn tốc độ request', code: 'rate_limited' }
+      : { status: 503, message: 'Hiện chưa có nguồn khả dụng cho model này', code: 'model_unavailable' }
   return Response.json(
-    { error: { message: 'Hiện chưa có nguồn khả dụng cho model này', type: 'upstream_unavailable' } },
-    { status: 503, headers: { 'x-request-id': requestId } }
+    { error: { message: finalError.message, type: 'upstream_error', code: finalError.code } },
+    { status: finalError.status, headers: { 'x-request-id': requestId } }
   )
 }

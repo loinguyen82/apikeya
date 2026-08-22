@@ -1,89 +1,133 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { formatVietnamDate, formatVietnamDateTime } from '@/lib/date'
+import { formatNumber } from '@/lib/money'
 
-interface KeyItem { id: string; name: string; prefix: string; status: string; last_used_at: string | null; created_at: string }
+interface KeyItem {
+  id: string
+  name: string
+  prefix: string
+  last_four: string | null
+  status: string
+  last_used_at: string | null
+  created_at: string
+  request_count: number
+}
+
+function maskedKey(key: KeyItem) {
+  return `${key.prefix}-••••••••••••${key.last_four || 'legacy'}`
+}
 
 export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
-  const [keys, setKeys] = useState<KeyItem[]>(initialKeys)
+  const [keys, setKeys] = useState(initialKeys)
   const [keyName, setKeyName] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newKeyPlaintext, setNewKeyPlaintext] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const [copyError, setCopyError] = useState(false)
-  const [revokingId, setRevokingId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://ai-api-gateway.loi822004.workers.dev'
-  const activeKey = keys.find((key) => key.status === 'active')
+  const secretPanelRef = useRef<HTMLElement>(null)
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://api.apivn.tech'
+  const activeCount = keys.filter((key) => key.status === 'active').length
 
-  async function handleCreateKey(e: React.FormEvent) {
-    e.preventDefault(); setCreating(true); setErrorMsg(null)
-    try {
-      const res = await fetch('/api/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: keyName.trim() || 'API Key' }) })
-      const json = await res.json()
-      if (!res.ok || json.error) setErrorMsg(json.error || 'Không thể tạo API key')
-      else {
-        setNewKeyPlaintext(json.plaintext)
-        setKeys([
-          { id: json.key.id, name: json.key.name, prefix: json.key.prefix, status: 'active', last_used_at: null, created_at: json.key.created_at || new Date().toISOString() },
-          ...keys.map((key) => key.status === 'active' ? { ...key, status: 'revoked' } : key),
-        ])
-        setKeyName('')
-      }
-    } catch { setErrorMsg('Lỗi kết nối máy chủ') } finally { setCreating(false) }
+  useEffect(() => {
+    if (!newKeyPlaintext) return
+    const frame = requestAnimationFrame(() => secretPanelRef.current?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [newKeyPlaintext])
+
+  async function request(body: unknown, method: 'POST' | 'PATCH' | 'DELETE') {
+    const response = await fetch('/api/keys', { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const result = await response.json().catch(() => null)
+    if (!response.ok || result?.error) throw new Error(result?.error || 'Không thể cập nhật API Key')
+    return result
   }
 
-  async function handleRevoke(keyId: string) {
-    if (!confirm('Thu hồi API key này? Ứng dụng đang dùng key sẽ ngừng truy cập và bạn cần tạo key mới trước lần đăng nhập tiếp theo.')) return
-    setRevokingId(keyId)
-    try {
-      const res = await fetch('/api/keys', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: keyId }) })
-      if (res.ok) setKeys(keys.map((k) => k.id === keyId ? { ...k, status: 'revoked' } : k))
-      else setErrorMsg('Không thể thu hồi API key')
-    } catch { setErrorMsg('Không thể thu hồi API key') } finally { setRevokingId(null) }
+  function revealSecret(result: any) {
+    if (typeof result?.plaintext !== 'string' || !result?.key?.id) throw new Error('Máy chủ không trả về secret mới')
+    setNewKeyPlaintext(result.plaintext)
+    setCopied(false)
   }
 
-  async function copyKey(text: string) {
-    setCopyError(false)
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2200) } catch { setCopyError(true) }
+  async function handleCreateKey(event: React.FormEvent) {
+    event.preventDefault()
+    setCreating(true)
+    setErrorMsg(null)
+    try {
+      const result = await request({ name: keyName.trim() || 'Default' }, 'POST')
+      revealSecret(result)
+      setKeys((current) => [{ ...result.key, request_count: 0 }, ...current])
+      setKeyName('')
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Không thể tạo API Key')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleRename(key: KeyItem) {
+    const name = window.prompt('Tên mới cho API Key', key.name)?.trim()
+    if (!name || name === key.name) return
+    setBusyId(key.id)
+    setErrorMsg(null)
+    try {
+      const result = await request({ id: key.id, action: 'rename', name }, 'PATCH')
+      setKeys((current) => current.map((item) => item.id === key.id ? { ...item, name: result.key.name } : item))
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Không thể đổi tên API Key')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleRotate(key: KeyItem) {
+    if (!window.confirm(`Rotate “${key.name}”? Key cũ sẽ bị thu hồi ngay.`)) return
+    setBusyId(key.id)
+    setErrorMsg(null)
+    try {
+      const result = await request({ id: key.id, action: 'rotate', name: key.name }, 'PATCH')
+      revealSecret(result)
+      setKeys((current) => [{ ...result.key, request_count: 0 }, ...current.map((item) => item.id === key.id ? { ...item, status: 'revoked' } : item)])
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Không thể rotate API Key')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleRevoke(key: KeyItem) {
+    if (!window.confirm(`Thu hồi “${key.name}”? Ứng dụng đang dùng key này sẽ bị từ chối.`)) return
+    setBusyId(key.id)
+    setErrorMsg(null)
+    try {
+      await request({ id: key.id }, 'DELETE')
+      setKeys((current) => current.map((item) => item.id === key.id ? { ...item, status: 'revoked' } : item))
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Không thể thu hồi API Key')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function copySecret() {
+    if (!newKeyPlaintext) return
+    try {
+      await navigator.clipboard.writeText(newKeyPlaintext)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2200)
+    } catch {
+      setErrorMsg('Trình duyệt chặn clipboard. Hãy sao chép secret thủ công.')
+    }
   }
 
   return (
     <div className="page-stack">
-      <header className="page-head">
-        <div className="page-head-copy"><div className="eyebrow">API key</div><h1>Credential của tài khoản</h1><p>Mỗi tài khoản chỉ có một API key active. Key này dùng cả để gọi API và đăng nhập Developer Console.</p></div>
-      </header>
-
+      <header className="page-head"><div className="page-head-copy"><div className="eyebrow">API Keys</div><h1>Credential gọi APIVN API</h1><p>Tạo nhiều key cho Production, Development hoặc từng công cụ. Tất cả dùng chung wallet của account.</p></div><span className="status-chip success">{activeCount} active</span></header>
       {errorMsg && <div className="notice danger" role="alert">{errorMsg}</div>}
-      {newKeyPlaintext && (
-        <section className="surface surface-pad">
-          <div className="page-head" style={{ marginBottom: 14 }}><div><span className="status-chip success">Key mới đã active</span><h3 style={{ marginTop: 8 }}>Lưu secret trước khi đóng</h3><p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Secret chỉ hiển thị một lần. Key cũ đã bị thu hồi.</p></div><button className="btn secondary" type="button" onClick={() => setNewKeyPlaintext(null)}>Đã lưu</button></div>
-          <div className="secret-box"><code>{newKeyPlaintext}</code><button className="btn" type="button" onClick={() => copyKey(newKeyPlaintext)}>{copied ? 'Đã sao chép' : 'Sao chép'}</button></div>
-          {copyError && <div className="notice warning" style={{ marginTop: 10 }}>Trình duyệt chặn clipboard. Hãy sao chép secret thủ công.</div>}
-        </section>
-      )}
-
-      <div className="key-grid">
-        <section className="surface surface-pad">
-          <div className="eyebrow">Credential</div><h3 style={{ margin: '6px 0 8px' }}>{activeKey ? 'Rotate API key' : 'Tạo API key'}</h3>
-          <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{activeKey ? `Key active hiện tại: ${activeKey.prefix}••••••. Tạo key mới sẽ thu hồi key này ngay.` : 'Tạo credential đầu tiên để đăng nhập và gọi API.'}</p>
-          <form onSubmit={handleCreateKey} className="page-stack" style={{ gap: 14 }}>
-            <div className="field"><label htmlFor="key-name">Tên key</label><input id="key-name" className="input" type="text" placeholder="Production" value={keyName} onChange={(e) => setKeyName(e.target.value)} /><span className="field-hint">Quota và số dư vẫn thuộc cùng wallet khi rotate key.</span></div>
-            <button className="btn" type="submit" disabled={creating}>{creating ? 'Đang xử lý…' : activeKey ? 'Rotate API key' : 'Tạo API key'}</button>
-          </form>
-          <div className="quick-config" style={{ marginTop: 20 }}><div className="config-item"><small>Base URL</small><code>{gatewayUrl}/v1</code></div><div className="config-item"><small>Auth header</small><code>Bearer sk-...</code></div></div>
-        </section>
-
-        <section className="surface model-table-shell">
-          <div className="surface-head"><h3>Lịch sử key</h3><span className="status-chip">{activeKey ? '1 active' : '0 active'}</span></div>
-          {keys.length > 0 ? (
-            <div className="table-scroll"><table className="data-table"><thead><tr><th>Tên</th><th>Prefix</th><th>Trạng thái</th><th>Dùng gần nhất</th><th>Ngày tạo</th><th></th></tr></thead><tbody>
-              {keys.map((k) => <tr key={k.id}><td><strong>{k.name}</strong></td><td><code>{k.prefix}••••••</code></td><td><span className={`status-chip ${k.status === 'active' ? 'success' : ''}`}>{k.status === 'active' ? 'Active' : 'Revoked'}</span></td><td>{k.last_used_at ? formatVietnamDateTime(k.last_used_at) : 'Chưa dùng'}</td><td>{formatVietnamDate(k.created_at)}</td><td>{k.status === 'active' && <button type="button" className="btn secondary" disabled={revokingId === k.id} onClick={() => handleRevoke(k.id)}>{revokingId === k.id ? 'Đang xử lý' : 'Thu hồi'}</button>}</td></tr>)}
-            </tbody></table></div>
-          ) : <div className="surface-body"><div className="empty-card"><div className="empty-icon">K</div><strong>Chưa có API key</strong><p>Tạo key đầu tiên ở cột bên trái để kết nối SDK và đăng nhập lần sau.</p></div></div>}
-        </section>
-      </div>
+      {newKeyPlaintext && <section ref={secretPanelRef} className="surface surface-pad key-secret-panel" role="dialog" aria-labelledby="new-key-title" aria-live="assertive" tabIndex={-1}><div className="page-head" style={{ marginBottom: 14 }}><div><span className="status-chip success">Secret chỉ hiển thị một lần</span><h2 id="new-key-title" style={{ marginTop: 8, fontSize: 20 }}>Lưu API Key ngay bây giờ</h2><p className="muted" style={{ fontSize: 12, marginTop: 4 }}>APIVN chỉ lưu SHA-256 hash và không thể khôi phục secret này.</p></div><button className="btn secondary" type="button" onClick={() => setNewKeyPlaintext(null)}>Tôi đã lưu</button></div><div className="secret-box"><div className="secret-value"><small>Secret key</small><code data-testid="new-api-key">{newKeyPlaintext}</code></div><button className="btn" type="button" onClick={copySecret}>{copied ? 'Đã copy' : 'Copy API Key'}</button></div></section>}
+      <section className="surface surface-pad key-create-row"><div><div className="eyebrow">Create</div><h2 style={{ margin: '5px 0', fontSize: 18 }}>Tạo API Key mới</h2><p className="muted" style={{ fontSize: 12 }}>Không cần nạp tiền để tạo key. Balance chỉ được kiểm tra khi gửi request.</p></div><form onSubmit={handleCreateKey} className="key-create-form"><div className="field"><label htmlFor="key-name">Tên key</label><input id="key-name" className="input" type="text" maxLength={80} placeholder="Production" value={keyName} onChange={(event) => setKeyName(event.target.value)} /></div><button className="btn" type="submit" disabled={creating}>{creating ? 'Đang tạo…' : 'Create API Key'}</button></form></section>
+      <section className="surface model-table-shell"><div className="surface-head"><div><h2>API Keys</h2><span className="muted" style={{ fontSize: 11 }}>Base URL: <code>{gatewayUrl}/v1</code></span></div><span className="status-chip">{keys.length} keys</span></div>{keys.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Name</th><th>Key</th><th>Created</th><th>Last Used</th><th>Requests</th><th>Status</th><th>Actions</th></tr></thead><tbody>{keys.map((key) => <tr key={key.id}><td><strong>{key.name}</strong></td><td><code>{maskedKey(key)}</code></td><td>{formatVietnamDate(key.created_at)}</td><td>{key.last_used_at ? formatVietnamDateTime(key.last_used_at) : 'Chưa dùng'}</td><td>{formatNumber(key.request_count)}</td><td><span className={`status-chip ${key.status === 'active' ? 'success' : ''}`}>{key.status === 'active' ? 'Active' : 'Revoked'}</span></td><td><div className="table-actions"><button className="text-button" type="button" disabled={busyId === key.id} onClick={() => handleRename(key)}>Rename</button>{key.status === 'active' && <><button className="text-button" type="button" disabled={busyId === key.id} onClick={() => handleRotate(key)}>Rotate</button><button className="text-button danger-text" type="button" disabled={busyId === key.id} onClick={() => handleRevoke(key)}>Revoke</button></>}</div></td></tr>)}</tbody></table></div> : <div className="surface-body"><div className="empty-card"><div className="empty-icon">K</div><strong>Bạn chưa có API Key</strong><p>Tạo key đầu tiên để bắt đầu gọi APIVN API.</p><button type="button" className="btn" onClick={() => document.getElementById('key-name')?.focus()}>Create API Key</button></div></div>}</section>
     </div>
   )
 }

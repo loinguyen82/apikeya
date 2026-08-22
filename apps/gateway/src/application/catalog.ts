@@ -12,8 +12,15 @@ const modelAliases: Record<string, string> = {
   sol: 'gpt-5.6-sol',
   sonnet: 'claude-sonnet-5',
   claude: 'claude-sonnet-5',
+  opus: 'claude-opus-5',
   kimi: 'kimi-k2.6',
+  k3: 'kimi-k3',
   v4: 'deepseek-v4',
+  gemini: 'gemini-3.1-pro-preview',
+  grok: 'grok-4.6',
+  glm: 'glm-5.2',
+  qwen: 'qwen3.7-plus',
+  minimax: 'minimax-m3',
 }
 
 export function resolveModelAlias(modelId: string): string {

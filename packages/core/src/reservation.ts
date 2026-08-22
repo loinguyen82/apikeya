@@ -19,8 +19,19 @@ export const DEFAULT_RESERVATION_POLICY: ReservationPolicy = {
 }
 
 export function estimateInputTokens(body: ChatCompletionRequest, policy = DEFAULT_RESERVATION_POLICY): number {
-  const chars = body.messages.reduce((sum, m) => sum + (m.content?.length ?? 0) + (m.role?.length ?? 0) + 12, 0)
-  const raw = Math.ceil(chars / policy.inputCharPerToken)
+  const messageChars = body.messages.reduce(
+    (sum, message) => sum + (message.content?.length ?? 0) + (message.role?.length ?? 0) + 12,
+    0,
+  )
+  let serializedBytes = 0
+  try {
+    serializedBytes = new TextEncoder().encode(JSON.stringify(body)).byteLength
+  } catch {
+    // Request validation normally rejects unserializable input before reservation.
+    // Retain the message-only estimate for direct library callers.
+  }
+  const inputUnits = Math.max(messageChars, serializedBytes)
+  const raw = Math.ceil(inputUnits / policy.inputCharPerToken)
   return Math.max(policy.minimumInputTokens, Math.ceil(raw * policy.inputSafetyMultiplier))
 }
 

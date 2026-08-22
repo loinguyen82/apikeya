@@ -65,7 +65,8 @@ function trackStream(
     },
     async cancel(reason) {
       try {
-        await reader?.cancel(reason)
+        reader ??= stream.getReader()
+        await reader.cancel(reason)
       } finally {
         complete()
       }
@@ -81,22 +82,32 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     apiKey: string
     upstreamModel: string
     body: ChatCompletionRequest
+    outputCap: number
     timeoutMs: number
     safeNoChargeStatuses: number[]
   }): Promise<ProviderSuccess | ProviderFailure> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort('upstream_timeout'), args.timeoutMs)
     try {
-      const body = {
+      const reservedOutputCap = Math.max(1, Math.min(args.outputCap, HARD_OUTPUT_CAP))
+      const requestedCap = requestedOutputCap(args.body, HARD_OUTPUT_CAP)
+      const forwardedOutputCap = Math.min(reservedOutputCap, requestedCap)
+      const outputLimit = args.body.max_completion_tokens != null
+        ? { max_completion_tokens: forwardedOutputCap }
+        : { max_tokens: forwardedOutputCap }
+
+      const body: ChatCompletionRequest = {
         ...args.body,
         model: args.upstreamModel,
-        ...(args.body.max_completion_tokens != null
-          ? { max_completion_tokens: requestedOutputCap(args.body, HARD_OUTPUT_CAP) }
-          : args.body.max_tokens != null
-          ? { max_tokens: requestedOutputCap(args.body, HARD_OUTPUT_CAP) }
-          : {}),
         ...(args.body.stream ? { stream_options: { include_usage: true } } : {}),
       }
+      delete body.max_tokens
+      delete body.max_completion_tokens
+      delete body.max_output_tokens
+      delete body.max_new_tokens
+      delete body.best_of
+      body.n = 1
+      Object.assign(body, outputLimit)
       const response = await fetch(`${args.baseUrl.replace(/\/$/, '')}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -107,29 +118,34 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
         signal: controller.signal,
       })
       if (!response.ok) {
+        const declaredNoCharge = args.safeNoChargeStatuses.includes(response.status)
+        let message = `Upstream returned HTTP ${response.status}`
         try {
-          const declaredNoCharge = args.safeNoChargeStatuses.includes(response.status)
-          const failure: ProviderFailure = {
-            providerId: this.id,
-            code: `UPSTREAM_HTTP_${response.status}`,
-            message: (await response.text()).slice(0, 500),
-            httpStatus: response.status,
-            retryClass: classifyRetry({
-              responseStarted: false,
-              streamStarted: false,
-              kind: 'http',
-              adapterDeclaredNoCharge: declaredNoCharge,
-              httpStatus: response.status,
-            }),
-          }
-          return failure
+          message = (await response.text()).slice(0, 500) || message
+        } catch (error) {
+          console.error('failed to read upstream error body', { providerId: this.id, status: response.status, error })
         } finally {
           clearTimeout(timeout)
         }
+        const failure: ProviderFailure = {
+          providerId: this.id,
+          code: `UPSTREAM_HTTP_${response.status}`,
+          message,
+          httpStatus: response.status,
+          retryClass: classifyRetry({
+            responseStarted: false,
+            streamStarted: false,
+            kind: 'http',
+            adapterDeclaredNoCharge: declaredNoCharge,
+            httpStatus: response.status,
+          }),
+        }
+        return failure
       }
       const providerRequestId = response.headers.get('x-request-id') ?? undefined
       if (args.body.stream) {
         if (!response.body) {
+          clearTimeout(timeout)
           return {
             providerId: this.id,
             code: 'UPSTREAM_STREAM_BODY_MISSING',
@@ -137,18 +153,21 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
             retryClass: classifyRetry({ responseStarted: true, streamStarted: false, kind: 'network' }),
           }
         }
-        const [clientStream, meterStream] = response.body.tee()
-        let openStreams = 2
-        const onComplete = () => {
-          openStreams -= 1
-          if (openStreams === 0) clearTimeout(timeout)
-        }
-        return {
-          kind: 'stream',
-          response,
-          clientStream: trackStream(clientStream, onComplete),
-          meterStream: trackStream(meterStream, onComplete),
-          providerRequestId,
+        const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+        if (contentType.includes('text/event-stream')) {
+          const [clientStream, meterStream] = response.body.tee()
+          let openStreams = 2
+          const onComplete = () => {
+            openStreams -= 1
+            if (openStreams === 0) clearTimeout(timeout)
+          }
+          return {
+            kind: 'stream',
+            response,
+            clientStream: trackStream(clientStream, onComplete),
+            meterStream: trackStream(meterStream, onComplete),
+            providerRequestId,
+          }
         }
       }
       try {

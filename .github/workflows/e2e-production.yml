@@ -2,38 +2,43 @@ name: Production E2E
 
 on:
   push:
-    branches: [main]
+    branches: [cloudflare-migration]
   workflow_dispatch:
 
 jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 18
+    env:
+      BASE_URL: ${{ vars.PRODUCTION_WEB_URL || 'https://apivn.tech' }}
+      GATEWAY_URL: ${{ vars.PRODUCTION_GATEWAY_URL || 'https://api.apivn.tech' }}
+      EXPECTED_DEPLOY_SHA: ${{ github.sha }}
+      EXPECTED_PAYMENT_MODE: ${{ vars.PRODUCTION_BILLING_MODE == 'live' && 'payos' || 'disabled' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
       - run: npm install --no-save @playwright/test@1.55.0
       - run: npx playwright install --with-deps chromium
       - name: Wait for the new production deployment
         shell: bash
         run: |
           for i in {1..48}; do
-            if curl -fsSL https://apikeya.vercel.app | grep -q "Nạp từ 20.000đ"; then
-              echo "New production funnel is live"
+            version_body="$(curl -fsSL "$BASE_URL/api/version" 2>/dev/null || true)"
+            health_body="$(curl -fsSL "$BASE_URL/api/health" 2>/dev/null || true)"
+            if echo "$version_body" | grep -Fq "\"revision\":\"$EXPECTED_DEPLOY_SHA\"" && echo "$health_body" | grep -Fq "\"paymentMode\":\"$EXPECTED_PAYMENT_MODE\""; then
+              echo "Developer Console revision $EXPECTED_DEPLOY_SHA is live at $BASE_URL"
               exit 0
             fi
             sleep 10
           done
-          echo "Expected production revision did not become ready"
+          echo "Expected production revision $EXPECTED_DEPLOY_SHA did not become ready at $BASE_URL"
           exit 1
       - name: Run E2E
         env:
-          BASE_URL: https://apikeya.vercel.app
-          GATEWAY_URL: https://ai-api-gateway.loi822004.workers.dev
           E2E_API_KEY: ${{ secrets.E2E_API_KEY }}
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}

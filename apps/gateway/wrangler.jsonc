@@ -1,9 +1,30 @@
 {
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "ai-api-gateway",
   "main": "src/index.ts",
-  "compatibility_date": "2025-02-14",
+  "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "api.apivn.tech",
+      "custom_domain": true
+    }
+  ],
   "vars": {
     "ENVIRONMENT": "production"
+  },
+  "secrets": {
+    "required": [
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "A6API_BASE_URL",
+      "A6API_KEY",
+      "INTERNAL_ADMIN_TOKEN",
+      "GATEWAY_USER_ASSERTION_SECRET"
+    ]
+  },
+  "observability": {
+    "enabled": true
   }
 }

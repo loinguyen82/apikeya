@@ -16,5 +16,8 @@
   },
   "devDependencies": {
     "typescript": "^5.7.0"
+  },
+  "overrides": {
+    "@aws-sdk/core": "3.977.8"
   }
 }

@@ -3,7 +3,7 @@ import type { ChatCompletionRequest } from '@aiapi/contracts'
 import type { Env } from '../env.js'
 import { executeChat } from '../application/execute-chat.js'
 import { validateChatRequest } from '../application/validate-chat.js'
-import { hmacSha256Hex } from '../utils/crypto.js'
+import { constantTimeEqual, verifyHmacSha256Hex } from '../utils/crypto.js'
 
 export const internalPlaygroundRoute = new Hono<{ Bindings: Env }>()
 
@@ -16,7 +16,8 @@ function getExecutionCtx(c: { executionCtx: { waitUntil(promise: Promise<any>): 
 }
 
 internalPlaygroundRoute.post('/', async (c) => {
-  if (!c.env.INTERNAL_ADMIN_TOKEN || c.req.header('x-internal-token') !== c.env.INTERNAL_ADMIN_TOKEN) {
+  const internalToken = c.req.header('x-internal-token') || ''
+  if (!c.env.INTERNAL_ADMIN_TOKEN || !(await constantTimeEqual(internalToken, c.env.INTERNAL_ADMIN_TOKEN))) {
     return c.json({ error: { message: 'Unauthorized internal call' } }, 401)
   }
   const userId = c.req.header('x-user-id')
@@ -25,23 +26,23 @@ internalPlaygroundRoute.post('/', async (c) => {
     return c.json({ error: { message: 'Playground user assertion is not configured' } }, 503)
   }
   const assertion = c.req.header('x-user-assertion')
-  const expectedAssertion = `sha256=${await hmacSha256Hex(c.env.GATEWAY_USER_ASSERTION_SECRET, userId)}`
-  if (!assertion || assertion !== expectedAssertion) {
-    return c.json({ error: { message: 'Invalid user context' } }, 401)
+  const candidate = assertion?.startsWith('sha256=') ? assertion.slice(7) : ''
+  if (!candidate || !(await verifyHmacSha256Hex(c.env.GATEWAY_USER_ASSERTION_SECRET, userId, candidate))) {
+    return c.json({ error: { code: 'invalid_user_context', message: 'Invalid user context', type: 'authentication_error' } }, 401)
   }
 
   let body: ChatCompletionRequest
   try {
     body = await c.req.json<ChatCompletionRequest>()
   } catch {
-    return c.json({ error: { message: 'JSON không hợp lệ' } }, 400)
+    return c.json({ error: { code: 'invalid_json', message: 'JSON không hợp lệ', type: 'invalid_request_error' } }, 400)
   }
 
   const validation = validateChatRequest(body)
   if (!validation.ok) {
     const status = validation.code === 'PAYLOAD_TOO_LARGE' ? 413 : 400
     return c.json(
-      { error: { code: validation.code, message: validation.message, type: 'invalid_request_error' } },
+      { error: { code: (validation.code || 'invalid_request').toLowerCase(), message: validation.message, type: 'invalid_request_error' } },
       status
     )
   }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "ignoreCommand": "node -e \"process.exit(process.env.VERCEL_PROJECT_ID === 'prj_5unI7QSE6GyfqA2Po7m5PNDf8r5C' ? 1 : 0)\"",
+  "ignoreCommand": "node -e \"process.exit(0)\"",
   "buildCommand": "npm run build --workspace @aiapi/web",
   "installCommand": "npm install",
   "outputDirectory": "apps/web/.next"
