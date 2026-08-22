@@ -151,8 +151,9 @@ pre,
 }
 
 .tide-brand-mark {
-  width: 42px;
-  height: 42px;
+  width: 52px;
+  height: 40px;
+  aspect-ratio: 13 / 10;
   flex: 0 0 auto;
 }
 
@@ -160,6 +161,7 @@ pre,
   display: block;
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 
 .tide-wordmark {
@@ -184,7 +186,7 @@ pre,
 }
 
 .tide-brand-compact .tide-brand-mark {
-  width: 38px;
+  width: 49px;
   height: 38px;
 }
 
@@ -1398,7 +1400,15 @@ textarea.input {
   background: #030812;
 }
 
-.secret-box code { min-width: 0; flex: 1; overflow-wrap: anywhere; color: var(--tide-aqua); }
+.key-secret-panel {
+  border-color: rgba(46, 230, 184, 0.56);
+  box-shadow: 0 0 0 1px rgba(46, 230, 184, 0.08), 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.key-secret-panel:focus { outline: none; }
+.secret-value { min-width: 0; flex: 1; }
+.secret-value small { display: block; margin-bottom: 4px; color: var(--tide-faint); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.secret-box code { display: block; min-width: 0; overflow-wrap: anywhere; color: var(--tide-aqua); font-size: 14px; }
 
 .quick-config {
   display: grid;
@@ -1583,7 +1593,9 @@ textarea.input {
   .public-footer-inner { width: min(100% - 32px, 1180px); }
   .public-header-inner { min-height: 62px; }
   .tide-wordmark { font-size: 19px; }
-  .tide-brand-mark { width: 38px; height: 38px; }
+  .tide-brand-mark { width: 47px; height: 36px; }
+  .secret-box { align-items: stretch; flex-direction: column; }
+  .secret-box .btn { width: 100%; }
   .public-actions .btn { min-height: 38px; padding-inline: 12px; font-size: 12px; }
   .landing-hero { gap: 44px; padding: 52px 0 46px; }
   .landing-hero h1 { font-size: 43px; }

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { formatVietnamDate, formatVietnamDateTime } from '@/lib/date'
 
 interface KeyItem { id: string; name: string; prefix: string; status: string; last_used_at: string | null; created_at: string }
@@ -14,20 +14,36 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
   const [copyError, setCopyError] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const secretPanelRef = useRef<HTMLElement>(null)
   const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || 'https://api.apivn.tech'
   const activeKey = keys.find((key) => key.status === 'active')
+
+  useEffect(() => {
+    if (!newKeyPlaintext) return
+    const frame = window.requestAnimationFrame(() => {
+      secretPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      secretPanelRef.current?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [newKeyPlaintext])
 
   async function handleCreateKey(e: React.FormEvent) {
     e.preventDefault(); setCreating(true); setErrorMsg(null)
     try {
       const res = await fetch('/api/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: keyName.trim() || 'API Key' }) })
-      const json = await res.json()
-      if (!res.ok || json.error) setErrorMsg(json.error || 'Không thể tạo API key')
+      const json = await res.json().catch(() => null)
+      if (!res.ok || json?.error) setErrorMsg(json?.error || 'Không thể tạo API key')
       else {
+        if (typeof json?.plaintext !== 'string' || !json.key?.id || !json.key?.prefix) {
+          setErrorMsg('Máy chủ đã tạo key nhưng không trả về secret. Hãy rotate key để nhận secret mới.')
+          return
+        }
+        setCopied(false)
+        setCopyError(false)
         setNewKeyPlaintext(json.plaintext)
-        setKeys([
+        setKeys((currentKeys) => [
           { id: json.key.id, name: json.key.name, prefix: json.key.prefix, status: 'active', last_used_at: null, created_at: json.key.created_at || new Date().toISOString() },
-          ...keys.map((key) => key.status === 'active' ? { ...key, status: 'revoked' } : key),
+          ...currentKeys.map((key) => key.status === 'active' ? { ...key, status: 'revoked' } : key),
         ])
         setKeyName('')
       }
@@ -39,7 +55,7 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
     setRevokingId(keyId)
     try {
       const res = await fetch('/api/keys', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: keyId }) })
-      if (res.ok) setKeys(keys.map((k) => k.id === keyId ? { ...k, status: 'revoked' } : k))
+      if (res.ok) setKeys((currentKeys) => currentKeys.map((key) => key.id === keyId ? { ...key, status: 'revoked' } : key))
       else setErrorMsg('Không thể thu hồi API key')
     } catch { setErrorMsg('Không thể thu hồi API key') } finally { setRevokingId(null) }
   }
@@ -57,9 +73,9 @@ export function ApiKeysClient({ initialKeys }: { initialKeys: KeyItem[] }) {
 
       {errorMsg && <div className="notice danger" role="alert">{errorMsg}</div>}
       {newKeyPlaintext && (
-        <section className="surface surface-pad">
-          <div className="page-head" style={{ marginBottom: 14 }}><div><span className="status-chip success">Key mới đã active</span><h3 style={{ marginTop: 8 }}>Lưu secret trước khi đóng</h3><p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Secret chỉ hiển thị một lần. Key cũ đã bị thu hồi.</p></div><button className="btn secondary" type="button" onClick={() => setNewKeyPlaintext(null)}>Đã lưu</button></div>
-          <div className="secret-box"><code>{newKeyPlaintext}</code><button className="btn" type="button" onClick={() => copyKey(newKeyPlaintext)}>{copied ? 'Đã sao chép' : 'Sao chép'}</button></div>
+        <section ref={secretPanelRef} className="surface surface-pad key-secret-panel" role="dialog" aria-labelledby="new-key-title" aria-live="assertive" tabIndex={-1}>
+          <div className="page-head" style={{ marginBottom: 14 }}><div><span className="status-chip success">Key mới đã active</span><h3 id="new-key-title" style={{ marginTop: 8 }}>API key đầy đủ của bạn</h3><p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Sao chép và lưu key ngay. Vì lý do bảo mật, secret sẽ không thể xem lại sau khi đóng khung này.</p></div><button className="btn secondary" type="button" onClick={() => setNewKeyPlaintext(null)}>Đóng sau khi đã lưu</button></div>
+          <div className="secret-box"><div className="secret-value"><small>Secret key</small><code data-testid="new-api-key">{newKeyPlaintext}</code></div><button className="btn" type="button" onClick={() => copyKey(newKeyPlaintext)}>{copied ? 'Đã sao chép' : 'Sao chép key'}</button></div>
           {copyError && <div className="notice warning" style={{ marginTop: 10 }}>Trình duyệt chặn clipboard. Hãy sao chép secret thủ công.</div>}
         </section>
       )}
