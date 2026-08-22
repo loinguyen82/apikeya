@@ -1,6 +1,17 @@
+import type { Metadata } from 'next'
 import { AppShell } from '@/components/AppShell'
 import { requireUser } from '@/lib/auth'
 import { formatVndFromMicros } from '@/lib/money'
+
+export const metadata: Metadata = {
+  title: 'Developer Console',
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+    noimageindex: true,
+  },
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { supabase, user } = await requireUser()
