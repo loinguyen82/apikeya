@@ -5,13 +5,17 @@ on conflict(id) do update set name=excluded.name, base_url=excluded.base_url, ti
 
 -- Danh mục Models (Giá microVND: 1 VND = 1000 microVND)
 -- Retail 2026-08-21: giữ cạnh tranh nhưng vẫn chừa biên so với cost route đang cấu hình.
-insert into public.models(id,display_name,description,tags,status,pricing_mode,retail_flat_micros_per_mtoken,default_max_output_tokens,max_output_tokens,streaming_enabled) values
-('kimi-k2.6','Kimi K2.6','Giá thấp cho chat dài, code và automation.',array['Giá rẻ','Chat'],'active','flat_total',150000,2048,8192,true),
-('deepseek-v4','DeepSeek V4','Mô hình reasoning và code tiết kiệm.',array['Code','Tiết kiệm'],'active','flat_total',300000,4096,8192,true),
-('claude-sonnet-5','Claude Sonnet 5','Khả năng code và phân tích ngữ cảnh dài.',array['Code','Phân tích'],'active','flat_total',750000,4096,8192,true),
-('gpt-5.6-terra','GPT-5.6 Terra','Cân bằng giữa tốc độ và chất lượng.',array['Đa năng','Nhanh'],'active','flat_total',1500000,4096,8192,true),
-('gpt-5.6-luna','GPT-5.6 Luna','Tối ưu cho tác vụ thường ngày, sáng tạo và coding.',array['Sáng tạo','Code'],'active','flat_total',600000,4096,8192,true),
-('gpt-5.6-sol','GPT-5.6 Sol','Model mạnh cho reasoning và tác vụ kỹ thuật khó.',array['Reasoning','Logic'],'active','flat_total',2500000,4096,8192,true)
+-- tokenizer_family là metadata explicit cho Hexa; không suy đoán từ display name/upstream alias.
+insert into public.models(
+  id,display_name,description,tags,status,pricing_mode,retail_flat_micros_per_mtoken,
+  default_max_output_tokens,max_output_tokens,streaming_enabled,context_window_tokens,tokenizer_family
+) values
+('kimi-k2.6','Kimi K2.6','Giá thấp cho chat dài, code và automation.',array['Giá rẻ','Chat'],'active','flat_total',150000,2048,8192,true,262144,'hf:moonshotai/Kimi-K2.6'),
+('deepseek-v4','DeepSeek V4','Mô hình reasoning và code tiết kiệm.',array['Code','Tiết kiệm'],'active','flat_total',300000,4096,8192,true,1048576,'hf-compatible:deepseek-ai/DeepSeek-V4-Flash'),
+('claude-sonnet-5','Claude Sonnet 5','Khả năng code và phân tích ngữ cảnh dài.',array['Code','Phân tích'],'active','flat_total',750000,4096,8192,true,null,'hf-compatible:Xenova/claude-tokenizer'),
+('gpt-5.6-terra','GPT-5.6 Terra','Cân bằng giữa tốc độ và chất lượng.',array['Đa năng','Nhanh'],'active','flat_total',1500000,4096,8192,true,null,'hf-compatible:Xenova/gpt-4o'),
+('gpt-5.6-luna','GPT-5.6 Luna','Tối ưu cho tác vụ thường ngày, sáng tạo và coding.',array['Sáng tạo','Code'],'active','flat_total',600000,4096,8192,true,null,'hf-compatible:Xenova/gpt-4o'),
+('gpt-5.6-sol','GPT-5.6 Sol','Model mạnh cho reasoning và tác vụ kỹ thuật khó.',array['Reasoning','Logic'],'active','flat_total',2500000,4096,8192,true,null,'hf-compatible:Xenova/gpt-4o')
 on conflict(id) do update set
   display_name=excluded.display_name,
   description=excluded.description,
@@ -21,7 +25,9 @@ on conflict(id) do update set
   retail_flat_micros_per_mtoken=excluded.retail_flat_micros_per_mtoken,
   default_max_output_tokens=excluded.default_max_output_tokens,
   max_output_tokens=excluded.max_output_tokens,
-  streaming_enabled=excluded.streaming_enabled;
+  streaming_enabled=excluded.streaming_enabled,
+  context_window_tokens=excluded.context_window_tokens,
+  tokenizer_family=excluded.tokenizer_family;
 
 -- Ánh xạ tuyến Upstream sang A6API. Các cost dưới đây là cost snapshot cấu hình,
 -- cần được admin sync/đối soát khi upstream đổi giá.
