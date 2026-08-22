@@ -12,10 +12,19 @@ export function isSupportedApiKey(value: string): boolean {
   return value.startsWith('sk-') || value.startsWith('ak_live_')
 }
 
+export function extractBearerApiKey(value: string | undefined): string | null {
+  if (!value) return null
+  const match = value.match(/^Bearer\s+(.+)$/i)
+  const key = match?.[1]?.trim()
+  return key || null
+}
+
 export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
   const auth = c.req.header('authorization')
-  const headerKey = c.req.header('x-api-key')
-  const bearerKey = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length).trim() : null
+  const rawHeaderKey = c.req.header('x-api-key')
+  const headerKey = rawHeaderKey?.trim() || null
+  const bearerKey = extractBearerApiKey(auth)
+
   if (headerKey && bearerKey && headerKey !== bearerKey) {
     return c.json({ error: { message: 'API key không nhất quán', type: 'authentication_error' } }, 401)
   }
@@ -26,6 +35,7 @@ export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variab
   if (!isSupportedApiKey(plaintext)) {
     return c.json({ error: { message: 'API key không hợp lệ', type: 'authentication_error' } }, 401)
   }
+
   const secretHash = await sha256Hex(plaintext)
   const db = adminDb(c.env)
   const { data, error } = await db
@@ -34,7 +44,11 @@ export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variab
     .eq('secret_hash', secretHash)
     .maybeSingle()
 
-  if (error || !data || data.status !== 'active') {
+  if (error) {
+    console.error('API key lookup failed', { code: error.code })
+    return c.json({ error: { message: 'Dịch vụ xác thực tạm thời không khả dụng', type: 'server_error' } }, 503)
+  }
+  if (!data || data.status !== 'active') {
     return c.json({ error: { message: 'API key không hợp lệ hoặc đã khóa', type: 'authentication_error' } }, 401)
   }
   if (data.expires_at && Date.parse(data.expires_at) <= Date.now()) {
@@ -45,6 +59,12 @@ export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variab
   c.set('apiKeyId', data.id)
   await next()
 
+  const lastUsedUpdate = Promise.resolve(
+    db.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
+  ).then(({ error: updateError }) => {
+    if (updateError) console.error('API key last_used_at update failed', { code: updateError.code })
+  })
+
   let executionCtx: { waitUntil(promise: Promise<any>): void } | undefined
   try {
     executionCtx = c.executionCtx
@@ -52,10 +72,8 @@ export const requireApiKey: MiddlewareHandler<{ Bindings: Env; Variables: Variab
     executionCtx = undefined
   }
   if (executionCtx?.waitUntil) {
-    executionCtx.waitUntil(
-      Promise.resolve(
-        db.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', data.id)
-      ).then(() => undefined)
-    )
+    executionCtx.waitUntil(lastUsedUpdate)
+  } else {
+    await lastUsedUpdate
   }
 }
