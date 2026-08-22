@@ -1,0 +1,9 @@
+FAIL
+locator.fill: Error: strict mode violation: getByLabel('Mật khẩu') resolved to 2 elements:
+    1) <input value="" required="" class="input" minlength="8" type="password" id="signup-password" placeholder="••••••••" autocomplete="new-password"/> aka getByRole('textbox', { name: 'Mật khẩu' })
+    2) <button type="button" class="password-toggle" aria-label="Hiện mật khẩu">Hiện</button> aka getByRole('button', { name: 'Hiện mật khẩu' })
+
+Call log:
+  - waiting for getByLabel('Mật khẩu')
+
+    at [stdin]:20:41
