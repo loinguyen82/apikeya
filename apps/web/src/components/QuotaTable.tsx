@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import styles from './QuotaTable.module.css'
 
 export type QuotaRequestRow = {
   id: string
@@ -25,6 +26,7 @@ export type QuotaRequestRow = {
 }
 
 const numberFormatter = new Intl.NumberFormat('en-US')
+const ONE_MILLION = 1_000_000n
 
 function formatTokens(value: number | null): string {
   return value == null ? '—' : numberFormatter.format(value)
@@ -44,7 +46,7 @@ function tokensPerSecond(row: QuotaRequestRow): string {
   if (!row.stream || row.outputTokens == null || row.outputTokens <= 0) return '—'
   const generationMs = elapsedMs(row.firstTokenAt, row.completedAt)
   if (generationMs == null || generationMs <= 0) return '—'
-  return `${(row.outputTokens / (generationMs / 1000)).toFixed(1)} t/s`
+  return `${Math.round(row.outputTokens / (generationMs / 1000))} t/s`
 }
 
 function formatCost(value: QuotaRequestRow['retailCostMicros']): string {
@@ -55,6 +57,26 @@ function formatCost(value: QuotaRequestRow['retailCostMicros']): string {
     const wholeVnd = micros / 1000n
     if (wholeVnd === 0n) return '<₫1'
     return `₫${numberFormatter.format(wholeVnd)}`
+  } catch {
+    return '—'
+  }
+}
+
+function tokenCountForRate(row: QuotaRequestRow): bigint | null {
+  const total = row.totalTokens ?? ((row.inputTokens ?? 0) + (row.outputTokens ?? 0))
+  if (!Number.isSafeInteger(total) || total <= 0) return null
+  return BigInt(total)
+}
+
+function ratePerMillion(row: QuotaRequestRow): string {
+  if (row.status !== 'settled' || row.retailCostMicros == null) return '—'
+  const tokenCount = tokenCountForRate(row)
+  if (tokenCount == null) return '—'
+
+  try {
+    const requestCostMicros = BigInt(row.retailCostMicros)
+    const normalizedMicros = (requestCostMicros * ONE_MILLION + tokenCount / 2n) / tokenCount
+    return `${formatCost(normalizedMicros)} / 1M`
   } catch {
     return '—'
   }
@@ -99,14 +121,14 @@ export function QuotaTable({
 
   return (
     <>
-      <div className="quota-table-wrap">
-        <table className="quota-table">
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
           <thead>
             <tr>
               <th>Model</th>
               <th>Stream</th>
               <th>Tokens</th>
-              <th>Cost</th>
+              <th>Rate / 1M</th>
               <th>Timing</th>
             </tr>
           </thead>
@@ -114,7 +136,7 @@ export function QuotaTable({
             {rows.map((row) => (
               <tr key={row.id}>
                 <td>
-                  <div className="quota-model">
+                  <div className={styles.model}>
                     {row.modelDisplayName && row.modelDisplayName !== row.modelId ? (
                       <>
                         <strong>{row.modelDisplayName}</strong>
@@ -127,37 +149,42 @@ export function QuotaTable({
                 </td>
                 <td>
                   {row.stream ? (
-                    <div className="quota-cell-stack">
-                      <strong>Stream</strong>
+                    <div className={styles.stack}>
+                      <strong className={styles.stream}>Stream</strong>
                       <span>{tokensPerSecond(row)}</span>
                     </div>
                   ) : (
-                    <span className="quota-muted-label">Non-stream</span>
+                    <span className={styles.muted}>Non-stream</span>
                   )}
                 </td>
                 <td>
-                  <div className="quota-cell-stack">
-                    <strong>{formatTokens(row.inputTokens)} / {formatTokens(row.outputTokens)}</strong>
+                  <div className={styles.stack}>
+                    <strong className={styles.mono}>{formatTokens(row.inputTokens)} / {formatTokens(row.outputTokens)}</strong>
                     <span>Cache: {formatTokens(row.cachedInputTokens)}</span>
                   </div>
                 </td>
-                <td><strong>{row.status === 'settled' ? formatCost(row.retailCostMicros) : '—'}</strong></td>
                 <td>
-                  <div className="quota-cell-stack">
-                    <span>First token {formatSeconds(elapsedMs(row.startedAt, row.firstTokenAt))}</span>
-                    <span>Duration {formatSeconds(elapsedMs(row.startedAt, row.completedAt))}</span>
+                  <div className={styles.stack}>
+                    <strong className={styles.rate}>{ratePerMillion(row)}</strong>
+                    <span>Request: {row.status === 'settled' ? formatCost(row.retailCostMicros) : '—'}</span>
+                  </div>
+                </td>
+                <td>
+                  <div className={`${styles.stack} ${styles.timing}`}>
+                    <span><i aria-hidden="true" />First token {formatSeconds(elapsedMs(row.startedAt, row.firstTokenAt))}</span>
+                    <span><i aria-hidden="true" />Duration {formatSeconds(elapsedMs(row.startedAt, row.completedAt))}</span>
                   </div>
                 </td>
               </tr>
             ))}
             {rows.length === 0 ? (
-              <tr><td colSpan={5} className="quota-empty">No API requests yet. Your usage will appear here.</td></tr>
+              <tr><td colSpan={5} className={styles.empty}>No API requests yet. Your usage will appear here.</td></tr>
             ) : null}
           </tbody>
         </table>
       </div>
 
-      <div className="quota-pagination" aria-label="Quota pagination">
+      <div className={styles.pagination} aria-label="Quota pagination">
         <span>Total: <strong>{numberFormatter.format(total)}</strong></span>
         <label>
           Rows per page:
@@ -165,13 +192,13 @@ export function QuotaTable({
             {[25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
           </select>
         </label>
-        <div className="quota-page-controls">
+        <div className={styles.pageControls}>
           <button type="button" onClick={() => navigate(1)} disabled={page === 1} aria-label="First page">«</button>
           <button type="button" onClick={() => navigate(page - 1)} disabled={page === 1} aria-label="Previous page">‹</button>
           {items.map((item, index) => item === 'ellipsis' ? (
-            <span className="quota-ellipsis" key={`ellipsis-${index}`}>…</span>
+            <span className={styles.ellipsis} key={`ellipsis-${index}`}>…</span>
           ) : (
-            <button type="button" className={item === page ? 'active' : ''} onClick={() => navigate(item)} key={item} aria-current={item === page ? 'page' : undefined}>{item}</button>
+            <button type="button" className={item === page ? styles.active : ''} onClick={() => navigate(item)} key={item} aria-current={item === page ? 'page' : undefined}>{item}</button>
           ))}
           <button type="button" onClick={() => navigate(page + 1)} disabled={page >= pageCount} aria-label="Next page">›</button>
           <button type="button" onClick={() => navigate(pageCount)} disabled={page >= pageCount} aria-label="Last page">»</button>
