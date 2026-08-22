@@ -36,7 +36,7 @@ type TokenPiece = {
   text: string
 }
 
-const TRANSFORMERS_ESM_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm'
+const TRANSFORMERS_ESM_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1'
 const tokenizerCache = new Map<string, Promise<Tokenizer>>()
 let modulePromise: Promise<TokenizerModule> | null = null
 
@@ -67,39 +67,76 @@ async function loadTokenizer(repo: string, requestId: number): Promise<Tokenizer
   }
 }
 
+function decodeIds(tokenizer: Tokenizer, ids: number[]): string {
+  try {
+    return tokenizer.decode(ids, {
+      skip_special_tokens: false,
+      clean_up_tokenization_spaces: false,
+    })
+  } catch {
+    return ''
+  }
+}
+
+function markerDecodedToken(token: string): string {
+  return token
+    .replace(/^Ġ/, ' ')
+    .replace(/^▁/, ' ')
+    .replaceAll('Ċ', '\n')
+    .replaceAll('ĉ', '\t')
+}
+
 function makePieces(tokenizer: Tokenizer, text: string, ids: number[], rawTokens: string[]): TokenPiece[] {
+  const pieces = ids.map((id, index) => ({
+    id,
+    index,
+    token: rawTokens[index] ?? String(id),
+    text: '',
+  }))
+
   let cursor = 0
+  let pendingStart = 0
 
-  return ids.map((id, index) => {
-    const token = rawTokens[index] ?? String(id)
-    let decoded = ''
-    try {
-      decoded = tokenizer.decode([id], {
-        skip_special_tokens: false,
-        clean_up_tokenization_spaces: false,
-      })
-    } catch {
-      decoded = ''
+  for (let index = 0; index < pieces.length; index += 1) {
+    const piece = pieces[index]!
+    const hasPending = pendingStart < index
+
+    if (!hasPending) {
+      const decoded = decodeIds(tokenizer, [piece.id])
+      if (decoded && text.startsWith(decoded, cursor)) {
+        piece.text = decoded
+        cursor += decoded.length
+        pendingStart = index + 1
+        continue
+      }
+
+      const markerDecoded = markerDecodedToken(piece.token)
+      if (markerDecoded && text.startsWith(markerDecoded, cursor)) {
+        piece.text = markerDecoded
+        cursor += markerDecoded.length
+        pendingStart = index + 1
+        continue
+      }
     }
 
-    if (decoded && text.startsWith(decoded, cursor)) {
-      cursor += decoded.length
-      return { id, index, token, text: decoded }
+    // Some byte-level tokenizers split one Unicode code point across multiple
+    // token IDs. Decode the unresolved group together before falling back.
+    const grouped = decodeIds(tokenizer, ids.slice(pendingStart, index + 1))
+    if (grouped && text.startsWith(grouped, cursor)) {
+      piece.text = grouped
+      cursor += grouped.length
+      pendingStart = index + 1
     }
+  }
 
-    const markerDecoded = token
-      .replace(/^Ġ/, ' ')
-      .replace(/^▁/, ' ')
-      .replaceAll('Ċ', '\n')
-      .replaceAll('ĉ', '\t')
+  // Normal tokenizer decoding should consume the full source. If a tokenizer
+  // normalizes text in a way that prevents exact reconstruction, preserve the
+  // user's original text rather than rendering replacement characters.
+  if (cursor < text.length && pieces.length > 0) {
+    pieces[pieces.length - 1]!.text += text.slice(cursor)
+  }
 
-    if (markerDecoded && text.startsWith(markerDecoded, cursor)) {
-      cursor += markerDecoded.length
-      return { id, index, token, text: markerDecoded }
-    }
-
-    return { id, index, token, text: decoded || markerDecoded || token }
-  })
+  return pieces
 }
 
 self.onmessage = async (event: MessageEvent<TokenizeRequest>) => {
