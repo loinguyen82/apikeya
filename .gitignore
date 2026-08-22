@@ -11,6 +11,7 @@ dist/
 
 # Cloudflare / Wrangler
 .wrangler/
+.open-next/
 
 # Logs
 npm-debug.log*

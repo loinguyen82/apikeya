@@ -12,16 +12,16 @@ export default function SignupPage() {
         <div className="auth-benefits">
           <div className="auth-benefit">API key đầy đủ chỉ hiện đúng một lần</div>
           <div className="auth-benefit">Playground và logs dùng dữ liệu thật</div>
-          <div className="auth-benefit">Checkout tạm thời mô phỏng, không cộng ví</div>
+          <div className="auth-benefit">Không cần nạp tiền trước khi vào Dashboard</div>
         </div>
       </section>
       <section className="auth-panel">
         <div className="auth-card">
           <BrandLogo gradientId="apivn-signup-form-gradient" />
           <h2 className="auth-title" style={{ marginTop: 28 }}>Tạo tài khoản APIVN</h2>
-          <p className="auth-subtitle">Sau khi đăng ký, bạn sẽ vào flow nạp tiền mô phỏng trước khi PayOS được kết nối.</p>
+          <p className="auth-subtitle">Vào Dashboard ngay, tạo key và gửi request đầu tiên theo checklist.</p>
           <SignupForm />
-          <div className="auth-foot">Đã có API key? <Link href="/login">Đăng nhập</Link></div>
+          <div className="auth-foot">Đã có tài khoản? <Link href="/login">Đăng nhập</Link></div>
         </div>
       </section>
     </main>

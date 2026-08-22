@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { isLiveBillingEnabled } from '../src/lib/billing-mode.ts'
 
-test('keeps billing mock-only unless live mode is explicitly enabled', () => {
+test('keeps billing disabled unless live mode is explicitly enabled', () => {
   const originalMode = process.env.BILLING_MODE
 
   try {
@@ -10,6 +10,9 @@ test('keeps billing mock-only unless live mode is explicitly enabled', () => {
     assert.equal(isLiveBillingEnabled(), false)
 
     process.env.BILLING_MODE = 'mock'
+    assert.equal(isLiveBillingEnabled(), false)
+
+    process.env.BILLING_MODE = 'disabled'
     assert.equal(isLiveBillingEnabled(), false)
 
     process.env.BILLING_MODE = 'LIVE'

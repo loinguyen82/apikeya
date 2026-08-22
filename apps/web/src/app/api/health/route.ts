@@ -33,7 +33,7 @@ export function GET() {
     {
       service: 'apivn-web',
       status: healthy ? 'ok' : 'misconfigured',
-      paymentMode: billingLive ? 'payos' : 'mock',
+      paymentMode: billingLive ? 'payos' : 'disabled',
       checks,
     },
     {

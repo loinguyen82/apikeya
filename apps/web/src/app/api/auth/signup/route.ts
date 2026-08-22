@@ -51,8 +51,6 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      // Existing accounts keep a temporary recovery path. No confirmation email
-      // is sent or required in the API-key-first customer flow.
       const existingClient = await createServerSupabase()
       const { error: existingLoginError } = await existingClient.auth.signInWithPassword({
         email: normalizedEmail,
@@ -63,12 +61,12 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({
-        error: 'Email này đã có tài khoản. Hãy đăng nhập bằng API key hoặc dùng đăng nhập cũ.',
+        error: 'Email này đã có tài khoản. Hãy đăng nhập bằng email và mật khẩu.',
       }, { status: 409 })
     }
 
-    // auth.users trigger creates profile + wallet synchronously. Open a temporary
-    // recovery session so a new customer can pay before receiving their API key.
+    // auth.users trigger creates profile + wallet synchronously. The session is
+    // account-owned; API keys are credentials for gateway requests only.
     const serverClient = await createServerSupabase()
     const { error: loginError } = await serverClient.auth.signInWithPassword({
       email: normalizedEmail,
@@ -79,10 +77,10 @@ export async function POST(req: NextRequest) {
         code: loginError.code,
         status: loginError.status,
       })
-      return NextResponse.json({ error: 'Tài khoản đã tạo nhưng không thể mở phiên thanh toán' }, { status: 500 })
+      return NextResponse.json({ error: 'Tài khoản đã tạo nhưng không thể mở phiên đăng nhập' }, { status: 500 })
     }
 
-    return NextResponse.json({ ok: true, requiresTopup: true })
+    return NextResponse.json({ ok: true })
   } catch (err: any) {
     console.error('signup route failed', err)
     return NextResponse.json({ error: 'Lỗi hệ thống khi tạo tài khoản' }, { status: 500 })

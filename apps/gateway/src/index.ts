@@ -14,7 +14,7 @@ app.use(
   '*',
   cors({
     origin: '*',
-    allowHeaders: ['authorization', 'x-api-key', 'anthropic-version', 'content-type', 'idempotency-key', 'x-internal-token', 'x-user-id', 'x-user-assertion'],
+    allowHeaders: ['authorization', 'x-api-key', 'anthropic-version', 'content-type', 'idempotency-key'],
     allowMethods: ['GET', 'POST', 'OPTIONS'],
   })
 )
@@ -37,7 +37,7 @@ app.route('/v1/messages', messagesRoute)
 
 app.route('/internal/playground/chat', internalPlaygroundRoute)
 
-app.notFound((c) => c.json({ error: { message: 'Not found', type: 'not_found' } }, 404))
+app.notFound((c) => c.json({ error: { message: 'Not found', type: 'invalid_request_error', code: 'not_found' } }, 404))
 
 app.onError((err, c) => {
   console.error(err)
@@ -45,7 +45,7 @@ app.onError((err, c) => {
     return c.json(
       {
         error: {
-          code: 'INSUFFICIENT_BALANCE',
+          code: 'insufficient_balance',
           message: 'Số dư dùng được chưa đủ cho lượt này.',
           type: 'billing_error',
         },
@@ -55,7 +55,7 @@ app.onError((err, c) => {
   }
   if (err.message.includes('IDEMPOTENCY_KEY_TOO_LONG')) {
     return c.json(
-      { error: { code: 'IDEMPOTENCY_KEY_TOO_LONG', message: 'Idempotency-Key quá dài.', type: 'invalid_request_error' } },
+      { error: { code: 'idempotency_key_too_long', message: 'Idempotency-Key quá dài.', type: 'invalid_request_error' } },
       400
     )
   }
@@ -63,7 +63,7 @@ app.onError((err, c) => {
     return c.json(
       {
         error: {
-          code: 'MODEL_NOT_AVAILABLE',
+          code: 'model_unavailable',
           message: 'Mô hình này hiện không khả dụng.',
           type: 'invalid_request_error',
         },
@@ -74,7 +74,7 @@ app.onError((err, c) => {
   return c.json(
     {
       error: {
-        code: 'INTERNAL_ERROR',
+        code: 'internal_error',
         message: 'Lỗi hệ thống',
         type: 'server_error',
       },

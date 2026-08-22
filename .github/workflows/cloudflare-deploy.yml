@@ -79,10 +79,10 @@ jobs:
           put_if_present PAYMENT_WEBHOOK_SECRET "${PAYMENT_WEBHOOK_SECRET:-}"
           put_if_present ADMIN_EMAILS "${ADMIN_EMAILS:-}"
 
-          # This release intentionally keeps checkout mock-only until the full
-          # PayOS product flow is enabled in both the UI and the backend.
-          printf 'mock' | npx wrangler secret put BILLING_MODE >/dev/null
-          echo 'Pinned BILLING_MODE=mock on apivn-web'
+          # Fail closed until verified PayOS credentials and product approval
+          # are ready. The UI never fabricates a paid transaction.
+          printf 'disabled' | npx wrangler secret put BILLING_MODE >/dev/null
+          echo 'Pinned BILLING_MODE=disabled on apivn-web'
 
           secret_list="$(npx wrangler secret list --format=json)"
           has_secret() {

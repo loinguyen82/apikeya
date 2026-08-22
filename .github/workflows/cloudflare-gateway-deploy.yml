@@ -1,8 +1,6 @@
 name: Deploy APIVN Gateway to Cloudflare
 
 on:
-  # Keep gateway deployment manual until the legacy api.apivn.tech A record is
-  # removed and the Cloudflare custom-domain route can own the hostname.
   workflow_dispatch:
 
 concurrency:

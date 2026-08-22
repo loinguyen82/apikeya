@@ -58,13 +58,13 @@ jobs:
           version_body=$(cat /tmp/version-body 2>/dev/null | head -c 300 | tr '\n' ' ')
           echo "- GET /api/version: HTTP $version_code — $version_body" >> "$OUT"
           [ "$version_code" = '200' ] || failures=$((failures+1))
-          echo "$version_body" | grep -q 'tide-mock-v1' || failures=$((failures+1))
+          echo "$version_body" | grep -q 'developer-console-v1' || failures=$((failures+1))
 
           health_code=$(curl -sS -o /tmp/health-body -w '%{http_code}' "$BASE/api/health" || echo 000)
           payment_mode=$(jq -r '.paymentMode // ""' /tmp/health-body 2>/dev/null || true)
           echo "- GET /api/health payment mode: HTTP $health_code — ${payment_mode:-missing}" >> "$OUT"
           [ "$health_code" = '200' ] || failures=$((failures+1))
-          [ "$payment_mode" = 'mock' ] || failures=$((failures+1))
+          [ "$payment_mode" = 'disabled' ] || failures=$((failures+1))
 
           check_redirect '/dashboard'
           check_redirect '/dashboard/billing'
@@ -77,8 +77,8 @@ jobs:
             -H 'content-type: application/json' \
             --data '{"apiKey":"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' || echo 000)
           body=$(cat /tmp/login-body 2>/dev/null | head -c 500 | tr '\n' ' ')
-          echo "- POST /api/auth/login with fake valid-shape key: HTTP $code — $body" >> "$OUT"
-          [ "$code" = '401' ] || failures=$((failures+1))
+          echo "- POST /api/auth/login with API key payload: HTTP $code — $body" >> "$OUT"
+          [ "$code" = '400' ] || failures=$((failures+1))
 
           code=$(curl -sS -o /tmp/topup-body -w '%{http_code}' \
             -X POST "$BASE/api/topups" \

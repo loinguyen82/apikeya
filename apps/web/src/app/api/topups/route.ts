@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
   if (!isLiveBillingEnabled()) {
     return NextResponse.json(
-      { error: 'Billing đang ở chế độ mô phỏng', code: 'BILLING_MOCK_ONLY' },
+      { error: 'Billing chưa được bật trên production', code: 'billing_not_configured' },
       { status: 503 },
     )
   }

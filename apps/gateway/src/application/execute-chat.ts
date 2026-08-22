@@ -59,7 +59,7 @@ async function auditWriteError(
 
 function internalFailure(requestId: string, message: string): Response {
   return Response.json(
-    { error: { message, type: 'server_error', request_id: requestId } },
+    { error: { message, type: 'server_error', code: 'internal_error', request_id: requestId } },
     { status: 500, headers: { 'x-request-id': requestId } },
   )
 }
@@ -73,11 +73,12 @@ export async function executeChat(args: {
   idempotencyKey?: string
   executionCtx?: { waitUntil: (promise: Promise<any>) => void }
 }): Promise<Response> {
+  const startedAtMs = Date.now()
   const db = adminDb(args.env)
   const model = await loadRuntimeModel(db, args.body.model, upstreamSecrets(args.env))
   if (args.body.stream && !model.streamingEnabled) {
     return Response.json(
-      { error: { message: 'Model này chưa hỗ trợ stream qua gateway', type: 'invalid_request_error' } },
+      { error: { message: 'Model này chưa hỗ trợ stream qua gateway', type: 'invalid_request_error', code: 'stream_not_supported' } },
       { status: 400 }
     )
   }
@@ -106,6 +107,7 @@ export async function executeChat(args: {
         error: {
           message: 'Idempotency-Key này đã được dùng. Gateway không dispatch lại để tránh tạo hai tác vụ AI.',
           type: 'idempotency_replay',
+          code: 'idempotency_replay',
           request_id: reservedRow.id,
           status: reservedRow.status,
         },
@@ -202,6 +204,7 @@ export async function executeChat(args: {
           error: {
             message: 'Upstream chưa phản hồi chắc chắn. Request không được tự gửi sang nguồn khác để tránh xử lý trùng.',
             type: 'upstream_error',
+            code: 'upstream_error',
             request_id: requestId,
           },
         },
@@ -252,7 +255,7 @@ export async function executeChat(args: {
       }
 
       const payload = { ...result.payload, gateway_request_id: requestId }
-      return Response.json(payload, { status: 200, headers: { 'x-request-id': requestId } })
+      return Response.json(payload, { status: 200, headers: { 'x-request-id': requestId, 'x-apivn-latency-ms': String(Date.now() - startedAtMs), 'x-apivn-cost-micros': String(retailCost) } })
     }
 
     const streamingAttemptError = await auditWriteError(() =>
@@ -348,8 +351,13 @@ export async function executeChat(args: {
     await markAmbiguousBestEffort(db, requestId, 'RELEASE_RECONCILE_REQUIRED')
     return internalFailure(requestId, 'Gateway chưa thể hoàn tất trạng thái request')
   }
+  const finalError = lastFailure?.code === 'UPSTREAM_TIMEOUT'
+    ? { status: 504, message: 'Upstream phản hồi quá thời gian cho phép', code: 'upstream_timeout' }
+    : lastFailure?.httpStatus === 429
+      ? { status: 429, message: 'Upstream đang giới hạn tốc độ request', code: 'rate_limited' }
+      : { status: 503, message: 'Hiện chưa có nguồn khả dụng cho model này', code: 'model_unavailable' }
   return Response.json(
-    { error: { message: 'Hiện chưa có nguồn khả dụng cho model này', type: 'upstream_unavailable' } },
-    { status: 503, headers: { 'x-request-id': requestId } }
+    { error: { message: finalError.message, type: 'upstream_error', code: finalError.code } },
+    { status: finalError.status, headers: { 'x-request-id': requestId } }
   )
 }

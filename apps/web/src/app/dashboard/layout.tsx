@@ -1,6 +1,6 @@
 import { AppShell } from '@/components/AppShell'
 import { requireUser } from '@/lib/auth'
-import { formatCreditFromMicros } from '@/lib/money'
+import { formatVndFromMicros } from '@/lib/money'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { supabase, user } = await requireUser()
@@ -16,7 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       user={{
         displayName: profile?.display_name ?? user.user_metadata?.display_name ?? '',
         email: user.email ?? '',
-        balanceLabel: formatCreditFromMicros(wallet?.available_micros ?? '0'),
+        balanceLabel: formatVndFromMicros(wallet?.available_micros ?? '0'),
         isAdmin,
       }}
     >

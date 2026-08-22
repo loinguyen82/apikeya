@@ -2,7 +2,7 @@ name: Production E2E
 
 on:
   push:
-    branches: [main]
+    branches: [cloudflare-migration]
   workflow_dispatch:
 
 jobs:
@@ -27,8 +27,8 @@ jobs:
           for i in {1..48}; do
             version_body="$(curl -fsSL "$BASE_URL/api/version" 2>/dev/null || true)"
             health_body="$(curl -fsSL "$BASE_URL/api/health" 2>/dev/null || true)"
-            if echo "$version_body" | grep -q 'tide-mock-v1' && echo "$health_body" | grep -q '"paymentMode":"mock"'; then
-              echo "Tide mock revision is live at $BASE_URL"
+            if echo "$version_body" | grep -q 'developer-console-v1' && echo "$health_body" | grep -q '"paymentMode":"disabled"'; then
+              echo "Developer Console revision is live at $BASE_URL"
               exit 0
             fi
             sleep 10

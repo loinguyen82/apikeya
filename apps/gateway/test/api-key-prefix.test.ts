@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { extractBearerApiKey, isSupportedApiKey, updateLastUsedBestEffort } from '../src/middleware/api-key.js'
 
 describe('API key prefixes', () => {
-  it('accepts new sk keys and legacy ak_live keys', () => {
+  it('accepts APIVN keys and legacy credentials during migration', () => {
+    expect(isSupportedApiKey('sk-apivn-test-key')).toBe(true)
     expect(isSupportedApiKey('sk-test-key')).toBe(true)
     expect(isSupportedApiKey('ak_live_test_key')).toBe(true)
   })

@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
       headers: {
         'content-type': upstream.headers.get('content-type') ?? 'application/json',
         'x-request-id': upstream.headers.get('x-request-id') ?? '',
+        'x-apivn-latency-ms': upstream.headers.get('x-apivn-latency-ms') ?? '',
+        'x-apivn-cost-micros': upstream.headers.get('x-apivn-cost-micros') ?? '',
       },
     })
   } catch (error: any) {

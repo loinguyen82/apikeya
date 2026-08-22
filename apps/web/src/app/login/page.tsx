@@ -7,19 +7,19 @@ export default function LoginPage() {
     <main className="auth-page">
       <section className="auth-aside">
         <BrandLogo gradientId="apivn-login-aside-gradient" />
-        <h1>Quay lại developer console.</h1>
-        <p>Đăng nhập nhanh bằng API key, hoặc dùng email và mật khẩu nếu bạn chưa có key.</p>
+        <h1>Quay lại Developer Console.</h1>
+        <p>Đăng nhập bằng account để quản lý key, số dư và usage tại một nơi.</p>
         <div className="auth-benefits">
-          <div className="auth-benefit">API key được hash, không lưu plaintext</div>
-          <div className="auth-benefit">Wallet và lịch sử request đi theo tài khoản</div>
-          <div className="auth-benefit">Rotate key không làm mất usage hoặc số dư</div>
+          <div className="auth-benefit">Account là danh tính đăng nhập Dashboard</div>
+          <div className="auth-benefit">API Key chỉ dùng để gọi gateway</div>
+          <div className="auth-benefit">Mọi key dùng chung wallet của account</div>
         </div>
       </section>
       <section className="auth-panel">
         <div className="auth-card">
           <BrandLogo gradientId="apivn-login-form-gradient" />
           <h2 className="auth-title" style={{ marginTop: 28 }}>Đăng nhập APIVN</h2>
-          <p className="auth-subtitle">Dán key dạng <code>sk-...</code> để mở console.</p>
+          <p className="auth-subtitle">Dùng email và mật khẩu của tài khoản APIVN.</p>
           <LoginForm />
           <div className="auth-foot">Chưa có tài khoản? <Link href="/signup">Tạo tài khoản</Link></div>
         </div>
