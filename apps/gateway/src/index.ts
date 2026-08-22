@@ -9,6 +9,7 @@ import { responsesRoute } from './routes/responses.js'
 import { messagesRoute } from './routes/messages.js'
 import { handleTelegramUpdate, sendTelegramMessage } from './monitor/model-health.js'
 import { ensureTelegramWebhook } from './monitor/telegram-webhook.js'
+import { handlePrivateTelegramUpdate, sendPrivateTopupLink } from './monitor/telegram-commerce.js'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -23,7 +24,7 @@ app.use(
 
 app.get('/healthz', (c) => {
   c.executionCtx.waitUntil(ensureTelegramWebhook(c.env))
-  return c.json({ ok: true, service: 'gateway', version: '0.4.2' })
+  return c.json({ ok: true, service: 'gateway', version: '0.4.3' })
 })
 
 app.post('/internal/telegram/model-health', async (c) => {
@@ -39,25 +40,37 @@ app.post('/internal/telegram/model-health', async (c) => {
   if (!update) return c.json({ ok: false, error: 'invalid_update' }, 400)
 
   const incomingChatId = update?.message?.chat?.id == null ? '' : String(update.message.chat.id)
+  const chatType = typeof update?.message?.chat?.type === 'string' ? update.message.chat.type : ''
   const text = typeof update?.message?.text === 'string' ? update.message.text.trim() : ''
-  const isCommand = text.startsWith('/')
 
+  if (chatType === 'private') {
+    await handlePrivateTelegramUpdate(c.env, update)
+    return c.json({ ok: true, mode: 'private' })
+  }
+
+  const command = text.split(/\s+/)[0]?.split('@')[0]?.toLowerCase() ?? ''
+  if (command === '/nap' || command === '/topup' || text === '💰 Nạp tiền') {
+    if (incomingChatId) c.executionCtx.waitUntil(sendPrivateTopupLink(c.env, incomingChatId))
+    return c.json({ ok: true, mode: 'private_topup_link' })
+  }
+
+  const isHealthCommand = command === '/status' || command === '/dead' || command === '/test'
   if (
     incomingChatId &&
-    isCommand &&
+    isHealthCommand &&
     c.env.TELEGRAM_CHAT_ID &&
     incomingChatId !== c.env.TELEGRAM_CHAT_ID
   ) {
     c.executionCtx.waitUntil(sendTelegramMessage(
       c.env,
       incomingChatId,
-      `🔐 Bot chưa được cấp cho chat này.\nChat ID của group/chat hiện tại: ${incomingChatId}\nHãy cập nhật Cloudflare secret TELEGRAM_CHAT_ID thành ID này rồi gửi /status lại.`
+      `🔐 Bot chưa được cấp health-check cho chat này.\nChat ID hiện tại: ${incomingChatId}\nHãy cập nhật TELEGRAM_CHAT_ID nếu đây là group health chính.`
     ))
     return c.json({ ok: true, chat_mismatch: true })
   }
 
   await handleTelegramUpdate(c.env, update, (promise) => c.executionCtx.waitUntil(promise))
-  return c.json({ ok: true })
+  return c.json({ ok: true, mode: 'group_health' })
 })
 
 app.route('/v1/models', modelsRoute)
