@@ -81,14 +81,14 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     apiKey: string
     upstreamModel: string
     body: ChatCompletionRequest
-    outputCap: number
+    outputCap?: number
     timeoutMs: number
     safeNoChargeStatuses: number[]
   }): Promise<ProviderSuccess | ProviderFailure> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort('upstream_timeout'), args.timeoutMs)
     try {
-      const reservedOutputCap = Math.max(1, Math.min(args.outputCap, HARD_OUTPUT_CAP))
+      const reservedOutputCap = Math.max(1, Math.min(args.outputCap ?? HARD_OUTPUT_CAP, HARD_OUTPUT_CAP))
       const requestedCap = requestedOutputCap(args.body, HARD_OUTPUT_CAP)
       const forwardedOutputCap = Math.min(reservedOutputCap, requestedCap)
       const outputLimit = args.body.max_completion_tokens != null
