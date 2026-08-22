@@ -49,7 +49,7 @@ function tokensPerSecond(row: QuotaRequestRow): string {
   return `${Math.round(row.outputTokens / (generationMs / 1000))} t/s`
 }
 
-function formatCost(value: QuotaRequestRow['retailCostMicros']): string {
+function formatCost(value: QuotaRequestRow['retailCostMicros'] | bigint): string {
   if (value == null) return '—'
   try {
     const micros = BigInt(value)
