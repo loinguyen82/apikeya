@@ -48,10 +48,15 @@ export type ModelSummary = {
   providers: RouteResult[]
 }
 
+type ManualScanClaim = {
+  allowed: boolean
+  retryAfterSeconds: number
+}
+
 const HEALTH_TIMEOUT_MS = 40_000
 const SLOW_THRESHOLD_MS = 40_000
 const DEAD_AFTER_FAILURES = 3
-const TELEGRAM_WEBHOOK_URL = 'https://api.apivn.tech/internal/telegram/model-health'
+const MANUAL_SCAN_COOLDOWN_SECONDS = 120
 const REPORT_BASE_URL = 'https://api.apivn.tech/v1'
 const TELEGRAM_SAFE_MESSAGE_LENGTH = 3_800
 
@@ -78,7 +83,6 @@ function failureStatus(previousFailures: number, failure: ProviderFailure | { ht
   const httpStatus = failure.httpStatus ?? null
   const hardFailure = httpStatus === 401 || httpStatus === 403 || httpStatus === 404 || failure.code === 'MISSING_PROVIDER_SECRET'
 
-  // 429 proves the route/model is reachable but temporarily capacity-limited.
   if (httpStatus === 429) return { status: 'degraded', consecutiveFailures }
   if (hardFailure || consecutiveFailures >= DEAD_AFTER_FAILURES) return { status: 'dead', consecutiveFailures }
   return { status: 'degraded', consecutiveFailures }
@@ -228,23 +232,6 @@ async function mapLimit<T, R>(items: T[], limit: number, task: (item: T) => Prom
   return output
 }
 
-function previousModelStatuses(routes: RouteRow[]): Map<string, HealthStatus> {
-  const grouped = new Map<string, HealthStatus[]>()
-  for (const route of routes) {
-    const group = grouped.get(route.model_id) ?? []
-    group.push(normalizeStatus(route.health_status))
-    grouped.set(route.model_id, group)
-  }
-  return new Map([...grouped.entries()].map(([modelId, statuses]) => [modelId, aggregateStatus(statuses)]))
-}
-
-function statusEmoji(status: HealthStatus): string {
-  if (status === 'live') return '🟢'
-  if (status === 'degraded') return '🟡'
-  if (status === 'dead') return '🔴'
-  return '⚪'
-}
-
 function formatCheckedAt(date = new Date()): string {
   try {
     return new Intl.DateTimeFormat('vi-VN', {
@@ -328,6 +315,12 @@ export function formatModelHealthReport(
   return lines.join('\n')
 }
 
+function formatProblemReport(summaries: ModelSummary[]): string {
+  const problems = summaries.filter((item) => reportOutcome(item) !== 'ok')
+  if (problems.length === 0) return '✅ Không có model chậm hoặc lỗi HTTP.'
+  return formatModelHealthReport(problems, 'APIVN model problems')
+}
+
 function splitTelegramText(text: string): string[] {
   if (text.length <= TELEGRAM_SAFE_MESSAGE_LENGTH) return [text]
   const chunks: string[] = []
@@ -362,34 +355,23 @@ export async function sendTelegramMessage(env: Env, chatId: string, text: string
   return allSent
 }
 
-async function notifyModelTransitions(
-  env: Env,
-  before: Map<string, HealthStatus>,
-  after: ModelSummary[],
-): Promise<void> {
-  if (!env.TELEGRAM_CHAT_ID || !env.TELEGRAM_BOT_TOKEN) return
-  const transitions = after.filter((summary) => {
-    const previous = before.get(summary.modelId) ?? 'unknown'
-    if (previous === summary.status) return false
-    if (previous === 'unknown' && summary.status === 'live') return false
-    return true
+async function claimManualScan(env: Env): Promise<ManualScanClaim> {
+  const db = adminDb(env)
+  const { data, error } = await db.rpc('claim_model_health_scan', {
+    p_cooldown_seconds: MANUAL_SCAN_COOLDOWN_SECONDS,
   })
-  if (transitions.length === 0) return
+  if (error) throw new Error(`MODEL_HEALTH_COOLDOWN_FAILED: ${error.message}`)
 
-  const lines = ['🚨 APIVN model state changed', '']
-  for (const summary of transitions) {
-    const previous = before.get(summary.modelId) ?? 'unknown'
-    const provider = pickReportProvider(summary)
-    const http = provider?.httpStatus == null ? 'ERR' : String(provider.httpStatus)
-    const latency = provider?.latencyMs ?? summary.latencyMs ?? 0
-    lines.push(`${statusEmoji(summary.status)} ${summary.modelId}: ${previous.toUpperCase()} → ${summary.status.toUpperCase()} · HTTP ${http} · ${latency}ms`)
+  const row = Array.isArray(data) ? data[0] : data
+  return {
+    allowed: Boolean(row?.allowed),
+    retryAfterSeconds: Math.max(0, Number(row?.retry_after_seconds ?? 0)),
   }
-  await sendTelegramMessage(env, env.TELEGRAM_CHAT_ID, lines.join('\n'))
 }
 
 export async function runModelHealthScan(
   env: Env,
-  options: { modelId?: string; notifyChanges?: boolean } = {},
+  options: { modelId?: string } = {},
 ): Promise<{ summaries: ModelSummary[]; text: string }> {
   const routes = await loadRoutes(env, options.modelId)
   if (routes.length === 0) {
@@ -397,22 +379,21 @@ export async function runModelHealthScan(
     return { summaries: [], text: `⚪ No provider route found for ${label}.` }
   }
 
-  const before = previousModelStatuses(routes)
   const results = await mapLimit(routes, 3, async (route) => {
     const result = await probeRoute(env, route)
     await persistResult(env, result)
     return result
   })
   const summaries = aggregateResults(results)
-  if (options.notifyChanges !== false) await notifyModelTransitions(env, before, summaries)
-  return {
-    summaries,
-    text: formatModelHealthReport(summaries, options.modelId ? 'APIVN model health check' : 'APIVN model health check'),
-  }
+  return { summaries, text: formatModelHealthReport(summaries) }
 }
 
-export async function readModelHealthStatus(env: Env, onlyProblems = false): Promise<string> {
-  const routes = await loadRoutes(env)
+export async function readModelHealthStatus(
+  env: Env,
+  onlyProblems = false,
+  modelId?: string,
+): Promise<string> {
+  const routes = await loadRoutes(env, modelId)
   const results: RouteResult[] = routes.map((route) => ({
     providerId: route.provider_id,
     modelId: route.model_id,
@@ -425,31 +406,52 @@ export async function readModelHealthStatus(env: Env, onlyProblems = false): Pro
     errorMessage: null,
   }))
   const summaries = aggregateResults(results)
-  const filtered = onlyProblems ? summaries.filter((item) => reportOutcome(item) !== 'ok') : summaries
-  if (onlyProblems && filtered.length === 0) return '✅ Không có model chậm hoặc lỗi HTTP.'
-  return formatModelHealthReport(filtered, onlyProblems ? 'APIVN model problems' : 'APIVN model health check')
+  return onlyProblems ? formatProblemReport(summaries) : formatModelHealthReport(summaries)
 }
 
-export async function ensureTelegramWebhook(env: Env): Promise<void> {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return
+async function handleManualHealthCommand(
+  env: Env,
+  chatId: string,
+  waitUntil: (promise: Promise<unknown>) => void,
+  options: { modelId?: string; onlyProblems?: boolean } = {},
+): Promise<void> {
+  let claim: ManualScanClaim
   try {
-    const infoResponse = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getWebhookInfo`)
-    const info = infoResponse.ok ? await infoResponse.json() as any : null
-    if (info?.result?.url === TELEGRAM_WEBHOOK_URL) return
-
-    const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        url: TELEGRAM_WEBHOOK_URL,
-        secret_token: env.TELEGRAM_WEBHOOK_SECRET,
-        allowed_updates: ['message'],
-      }),
-    })
-    if (!response.ok) console.error('telegram setWebhook failed', response.status, (await response.text()).slice(0, 300))
+    claim = await claimManualScan(env)
   } catch (error) {
-    console.error('telegram webhook setup failed', error)
+    await sendTelegramMessage(
+      env,
+      chatId,
+      `❌ Không thể bắt đầu health check: ${error instanceof Error ? error.message : 'unknown error'}`
+    )
+    return
   }
+
+  if (!claim.allowed) {
+    const cached = await readModelHealthStatus(env, Boolean(options.onlyProblems), options.modelId)
+    await sendTelegramMessage(
+      env,
+      chatId,
+      `⏱ Giới hạn health check: 1 lần / 2 phút. Còn ${claim.retryAfterSeconds}s mới được check lại.\nKhông gọi upstream mới; dưới đây là kết quả gần nhất.\n\n${cached}`
+    )
+    return
+  }
+
+  const label = options.modelId ? resolveModelAlias(options.modelId) : 'tất cả model'
+  await sendTelegramMessage(env, chatId, `⏳ Đang kiểm tra ${label}…`)
+
+  waitUntil(
+    runModelHealthScan(env, { modelId: options.modelId })
+      .then((result) => {
+        const text = options.onlyProblems ? formatProblemReport(result.summaries) : result.text
+        return sendTelegramMessage(env, chatId, text)
+      })
+      .catch((error) => sendTelegramMessage(
+        env,
+        chatId,
+        `❌ Health check failed: ${error instanceof Error ? error.message : 'unknown error'}`
+      ))
+  )
 }
 
 export async function handleTelegramUpdate(
@@ -478,32 +480,29 @@ export async function handleTelegramUpdate(
   if (command === '/start' || command === '/help') {
     await sendTelegramMessage(env, incomingChatId, [
       '🤖 APIVN Model Health',
-      '/status — xem report gần nhất',
-      '/dead — chỉ model chậm/lỗi',
-      '/test — test ngay tất cả model',
-      '/test <model> — test một model, ví dụ /test sol',
+      '/status — check ngay tất cả model',
+      '/dead — check rồi chỉ hiện model chậm/lỗi',
+      '/test — alias của /status',
+      '/test <model> — check một model, ví dụ /test sol',
+      '',
+      'Giới hạn: tối đa 1 health check / 2 phút.',
     ].join('\n'))
     return
   }
 
   if (command === '/status') {
-    await sendTelegramMessage(env, incomingChatId, await readModelHealthStatus(env))
+    await handleManualHealthCommand(env, incomingChatId, waitUntil)
     return
   }
 
   if (command === '/dead') {
-    await sendTelegramMessage(env, incomingChatId, await readModelHealthStatus(env, true))
+    await handleManualHealthCommand(env, incomingChatId, waitUntil, { onlyProblems: true })
     return
   }
 
   if (command === '/test') {
     const modelId = args.join(' ').trim() || undefined
-    await sendTelegramMessage(env, incomingChatId, `⏳ Đang test ${modelId ? resolveModelAlias(modelId) : 'tất cả model'}…`)
-    waitUntil(
-      runModelHealthScan(env, { modelId, notifyChanges: false })
-        .then((result) => sendTelegramMessage(env, incomingChatId, result.text))
-        .catch((error) => sendTelegramMessage(env, incomingChatId, `❌ Health test failed: ${error instanceof Error ? error.message : 'unknown error'}`))
-    )
+    await handleManualHealthCommand(env, incomingChatId, waitUntil, { modelId })
     return
   }
 
