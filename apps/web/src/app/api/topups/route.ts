@@ -4,6 +4,18 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { rejectCrossSiteMutation } from '@/lib/security'
 
 const allowedAmounts = new Set([20000, 50000, 100000, 200000, 500000, 1000000])
+const PAYMENT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const TOPUP_TTL_MS = 15 * 60 * 1000
+
+function createPaymentCode(): string {
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  let suffix = ''
+  for (const byte of bytes) {
+    suffix += PAYMENT_CODE_ALPHABET[byte % PAYMENT_CODE_ALPHABET.length]
+  }
+  return `APV${suffix}`
+}
 
 export async function POST(req: NextRequest) {
   const originError = rejectCrossSiteMutation(req)
@@ -25,12 +37,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_amount' }, { status: 400 })
   }
 
+  const nowIso = new Date().toISOString()
   const { count: activePendingCount, error: pendingLookupError } = await client
     .from('topups')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
     .eq('status', 'pending')
-    .gt('expires_at', new Date().toISOString())
+    .gt('expires_at', nowIso)
 
   if (pendingLookupError) {
     return NextResponse.json({ error: 'Không thể kiểm tra đơn nạp đang mở' }, { status: 503 })
@@ -54,7 +67,7 @@ export async function POST(req: NextRequest) {
     .update({ status: 'expired' })
     .eq('user_id', user.id)
     .eq('status', 'pending')
-    .lte('expires_at', new Date().toISOString())
+    .lte('expires_at', nowIso)
 
   const { data, error } = await admin
     .from('topups')
@@ -63,9 +76,10 @@ export async function POST(req: NextRequest) {
       amount_micros: String(amount * 1000),
       bonus_micros: String(bonus * 1000),
       payable_vnd: amount,
-      payment_provider: 'manual_vietqr',
+      payment_code: createPaymentCode(),
+      payment_provider: process.env.BANK_PAYMENT_PROVIDER || 'manual_vietqr',
       status: 'pending',
-      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      expires_at: new Date(Date.now() + TOPUP_TTL_MS).toISOString(),
     })
     .select('id')
     .single()
