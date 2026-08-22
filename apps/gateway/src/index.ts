@@ -20,7 +20,7 @@ app.use(
   })
 )
 
-app.get('/healthz', (c) => c.json({ ok: true, service: 'gateway', version: '0.4.0' }))
+app.get('/healthz', (c) => c.json({ ok: true, service: 'gateway', version: '0.4.1' }))
 
 app.post('/internal/telegram/model-health', async (c) => {
   const secret = c.env.TELEGRAM_WEBHOOK_SECRET
