@@ -92,12 +92,24 @@ test.describe('Apikeya authenticated journey', () => {
 
   test('API-key login and all customer surfaces render', async ({ page }) => {
     await login(page)
-    for (const path of ['/dashboard', '/dashboard/billing', '/dashboard/playground', '/dashboard/models', '/dashboard/api-keys', '/dashboard/usage']) {
+    for (const path of ['/dashboard', '/dashboard/billing', '/dashboard/hexa', '/dashboard/quota', '/dashboard/models', '/dashboard/api-keys', '/dashboard/usage']) {
       await page.goto(`${baseURL}${path}`, { waitUntil: 'networkidle' })
       await expect(page).toHaveURL(new RegExp(path.replaceAll('/', '\\/')))
       await expect(page.locator('body')).not.toContainText('Application error')
       await expect(page.locator('body')).not.toContainText('🥕')
     }
+
+    await page.goto(`${baseURL}/dashboard/hexa`, { waitUntil: 'networkidle' })
+    await expect(page.getByRole('heading', { name: 'Hexa' })).toBeVisible()
+    await expect(page.getByLabel('Text to analyze')).toBeVisible()
+    await expect(page.locator('body')).toContainText('Local only')
+
+    await page.goto(`${baseURL}/dashboard/quota`, { waitUntil: 'networkidle' })
+    await expect(page.getByRole('heading', { name: 'Quota' })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'API request usage' })).toBeVisible()
+
+    await page.goto(`${baseURL}/dashboard/playground?model=kimi-k2.6`, { waitUntil: 'networkidle' })
+    await expect(page).toHaveURL(/\/dashboard\/hexa\?model=kimi-k2\.6/)
   })
 
   test('billing exposes the 20k entry package', async ({ page }) => {
@@ -131,16 +143,8 @@ test.describe('Apikeya authenticated journey', () => {
     await expect(page.locator('body')).toContainText('Nội dung bắt buộc')
   })
 
-  test('optional funded flow returns real Playground and gateway responses', async ({ page, request }) => {
+  test('optional funded flow returns a real gateway response', async ({ request }) => {
     test.skip(!funded || !e2eApiKey, 'Set E2E_FUNDED=true and E2E_API_KEY for the dedicated funded account.')
-    await login(page)
-
-    await page.goto(`${baseURL}/dashboard/playground?model=kimi-k2.6`, { waitUntil: 'networkidle' })
-    await page.getByLabel('Prompt').fill('Trả lời đúng một từ: OK')
-    await page.getByRole('button', { name: 'Gửi' }).click()
-    await expect(page.locator('.message.assistant').last()).toBeVisible({ timeout: 45000 })
-    await expect(page.locator('.receipt')).toBeVisible({ timeout: 45000 })
-    await expect(page.locator('.notice.danger')).toHaveCount(0)
 
     const apiRes = await request.post(`${gatewayURL}/v1/chat/completions`, {
       headers: { authorization: `Bearer ${e2eApiKey}`, 'content-type': 'application/json' },
