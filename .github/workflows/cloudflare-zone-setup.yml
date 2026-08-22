@@ -1,9 +1,6 @@
 name: Setup APIVN Cloudflare Zone
 
 on:
-  push:
-    branches:
-      - cloudflare-migration
   workflow_dispatch:
 
 permissions:
@@ -13,6 +10,8 @@ permissions:
 jobs:
   setup-zone:
     runs-on: ubuntu-latest
+    env:
+      GATEWAY_ORIGIN_IP: ${{ vars.GATEWAY_ORIGIN_IP || '70.36.125.65' }}
     steps:
       - name: Create/find zone and configure API DNS
         env:
@@ -21,7 +20,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           STATUS=/tmp/cf-zone-status.md
           echo 'Cloudflare zone setup started.' > "$STATUS"
           report() { gh issue comment 8 --repo loinguyen82/apikeya --body-file "$STATUS" >/dev/null 2>&1 || true; }
@@ -30,7 +29,7 @@ jobs:
           API='https://api.cloudflare.com/client/v4'
           AUTH=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')
 
-          LOOKUP=$(curl -sS "${AUTH[@]}" "${API}/zones?name=apivn.tech&account.id=${CLOUDFLARE_ACCOUNT_ID}") || true
+          LOOKUP=$(curl -sS "${AUTH[@]}" "${API}/zones?name=apivn.tech&account.id=${CLOUDFLARE_ACCOUNT_ID}")
           if [ "$(printf '%s' "$LOOKUP" | jq -r '.success // false')" != 'true' ]; then
             {
               echo 'FAILED: cannot read Cloudflare zones.'
@@ -42,7 +41,7 @@ jobs:
           ZONE_ID=$(printf '%s' "$LOOKUP" | jq -r '.result[0].id // empty')
           if [ -z "$ZONE_ID" ]; then
             CREATE=$(curl -sS -X POST "${AUTH[@]}" "${API}/zones" \
-              --data "{\"name\":\"apivn.tech\",\"account\":{\"id\":\"${CLOUDFLARE_ACCOUNT_ID}\"},\"type\":\"full\"}") || true
+              --data "{\"name\":\"apivn.tech\",\"account\":{\"id\":\"${CLOUDFLARE_ACCOUNT_ID}\"},\"type\":\"full\"}")
             if [ "$(printf '%s' "$CREATE" | jq -r '.success // false')" != 'true' ]; then
               {
                 echo 'FAILED: Cloudflare account can be read, but apivn.tech cannot be added.'
@@ -53,7 +52,7 @@ jobs:
             ZONE_ID=$(printf '%s' "$CREATE" | jq -r '.result.id')
           fi
 
-          ZONE=$(curl -sS "${AUTH[@]}" "${API}/zones/${ZONE_ID}") || true
+          ZONE=$(curl -sS "${AUTH[@]}" "${API}/zones/${ZONE_ID}")
           if [ "$(printf '%s' "$ZONE" | jq -r '.success // false')" != 'true' ]; then
             echo 'FAILED: zone was found/created but could not be read.' > "$STATUS"
             exit 1
@@ -62,7 +61,7 @@ jobs:
           NS=$(printf '%s' "$ZONE" | jq -r '.result.name_servers[]?' | paste -sd ', ' -)
           ZONE_STATUS=$(printf '%s' "$ZONE" | jq -r '.result.status')
 
-          EXISTING=$(curl -sS "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records?type=A&name=api.apivn.tech") || true
+          EXISTING=$(curl -sS "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records?type=A&name=api.apivn.tech")
           if [ "$(printf '%s' "$EXISTING" | jq -r '.success // false')" != 'true' ]; then
             {
               echo "PARTIAL: zone exists (status: ${ZONE_STATUS}), but token cannot manage DNS records."
@@ -73,11 +72,11 @@ jobs:
           fi
 
           RECORD_ID=$(printf '%s' "$EXISTING" | jq -r '.result[0].id // empty')
-          BODY='{"type":"A","name":"api","content":"70.36.125.65","ttl":300,"proxied":false}'
+          BODY=$(jq -nc --arg ip "$GATEWAY_ORIGIN_IP" '{type:"A",name:"api",content:$ip,ttl:300,proxied:false}')
           if [ -n "$RECORD_ID" ]; then
-            DNS_RESULT=$(curl -sS -X PUT "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records/${RECORD_ID}" --data "$BODY") || true
+            DNS_RESULT=$(curl -sS -X PUT "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records/${RECORD_ID}" --data "$BODY")
           else
-            DNS_RESULT=$(curl -sS -X POST "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records" --data "$BODY") || true
+            DNS_RESULT=$(curl -sS -X POST "${AUTH[@]}" "${API}/zones/${ZONE_ID}/dns_records" --data "$BODY")
           fi
 
           if [ "$(printf '%s' "$DNS_RESULT" | jq -r '.success // false')" != 'true' ]; then
@@ -93,7 +92,5 @@ jobs:
             echo 'SUCCESS: apivn.tech Cloudflare zone is ready.'
             echo "Zone status: ${ZONE_STATUS}"
             echo "Nameservers: ${NS}"
-            echo 'DNS: api.apivn.tech -> 70.36.125.65 (DNS only)'
+            echo "DNS: api.apivn.tech -> ${GATEWAY_ORIGIN_IP} (DNS only)"
           } > "$STATUS"
-
-# verification rerun 2026-08-21 22:56 +07
