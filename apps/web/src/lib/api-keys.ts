@@ -10,6 +10,6 @@ export function generateApiKey(): { plaintext: string; prefix: string } {
     .replaceAll('+', '-')
     .replaceAll('/', '_')
     .replaceAll('=', '')
-  const plaintext = `sk-${token}`
-  return { plaintext, prefix: plaintext.slice(0, 10) }
+  const plaintext = `sk-apivn-${token}`
+  return { plaintext, prefix: plaintext.slice(0, 12) }
 }
