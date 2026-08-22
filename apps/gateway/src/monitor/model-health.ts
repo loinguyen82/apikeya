@@ -5,6 +5,7 @@ import { OpenAICompatibleAdapter } from '../providers/openai-compatible.js'
 import { adminDb } from '../repositories/supabase.js'
 
 export type HealthStatus = 'unknown' | 'live' | 'degraded' | 'dead'
+type ReportOutcome = 'ok' | 'slow' | 'http_error'
 
 type ProviderInfo = {
   base_url: string
@@ -28,7 +29,7 @@ type RouteRow = {
   providers: ProviderInfo
 }
 
-type RouteResult = {
+export type RouteResult = {
   providerId: string
   modelId: string
   previousStatus: HealthStatus
@@ -40,16 +41,19 @@ type RouteResult = {
   errorMessage: string | null
 }
 
-type ModelSummary = {
+export type ModelSummary = {
   modelId: string
   status: HealthStatus
   latencyMs: number | null
   providers: RouteResult[]
 }
 
-const HEALTH_TIMEOUT_MS = 20_000
+const HEALTH_TIMEOUT_MS = 40_000
+const SLOW_THRESHOLD_MS = 40_000
 const DEAD_AFTER_FAILURES = 3
 const TELEGRAM_WEBHOOK_URL = 'https://api.apivn.tech/internal/telegram/model-health'
+const REPORT_BASE_URL = 'https://api.apivn.tech/v1'
+const TELEGRAM_SAFE_MESSAGE_LENGTH = 3_800
 
 const probeBody: ChatCompletionRequest = {
   model: 'health-probe',
@@ -255,40 +259,107 @@ function formatCheckedAt(date = new Date()): string {
   }
 }
 
-function formatSummaries(summaries: ModelSummary[], title = 'APIVN Model Health'): string {
-  const live = summaries.filter((item) => item.status === 'live').length
-  const degraded = summaries.filter((item) => item.status === 'degraded').length
-  const dead = summaries.filter((item) => item.status === 'dead').length
-  const lines = [
-    `🤖 ${title}`,
-    `${live}/${summaries.length} LIVE · ${degraded} DEGRADED · ${dead} DEAD`,
-    '',
-  ]
+function pickReportProvider(summary: ModelSummary): RouteResult | null {
+  if (summary.providers.length === 0) return null
+  const live = summary.providers
+    .filter((provider) => provider.status === 'live')
+    .sort((a, b) => a.latencyMs - b.latencyMs)[0]
+  if (live) return live
 
-  for (const summary of summaries) {
-    const latency = summary.latencyMs == null ? '' : ` · ${summary.latencyMs}ms`
-    const problem = summary.providers.find((provider) => provider.status !== 'live')
-    const reason = summary.status === 'live' || !problem
-      ? ''
-      : ` · ${problem.providerId}: ${problem.errorCode ?? problem.httpStatus ?? 'error'} #${problem.consecutiveFailures}`
-    lines.push(`${statusEmoji(summary.status)} ${summary.modelId}${latency}${reason}`)
+  const unresolved = summary.providers.find((provider) =>
+    provider.httpStatus == null && (
+      provider.errorCode === 'UPSTREAM_TIMEOUT' ||
+      provider.errorCode === 'UPSTREAM_NETWORK' ||
+      provider.status === 'unknown'
+    )
+  )
+  return unresolved ?? summary.providers[0]
+}
+
+function reportOutcome(summary: ModelSummary): ReportOutcome {
+  const provider = pickReportProvider(summary)
+  if (!provider) return 'slow'
+  if (provider.status === 'live' && provider.httpStatus != null && provider.httpStatus >= 200 && provider.httpStatus < 300) {
+    return provider.latencyMs >= SLOW_THRESHOLD_MS ? 'slow' : 'ok'
   }
-  lines.push('', `Checked ${formatCheckedAt()}`)
+  if (
+    provider.httpStatus == null &&
+    (provider.errorCode === 'UPSTREAM_TIMEOUT' || provider.errorCode === 'UPSTREAM_NETWORK' || provider.status === 'unknown')
+  ) {
+    return 'slow'
+  }
+  return 'http_error'
+}
+
+function formatReportLine(summary: ModelSummary): string {
+  const provider = pickReportProvider(summary)
+  const latencyMs = provider?.latencyMs ?? summary.latencyMs ?? 0
+  const http = provider?.httpStatus == null ? 'ERR' : String(provider.httpStatus)
+  const outcome = reportOutcome(summary)
+
+  if (outcome === 'ok') {
+    return `✅ ${summary.modelId}: OK · HTTP ${http} · ${latencyMs}ms`
+  }
+  if (outcome === 'slow') {
+    const slowLabel = latencyMs >= SLOW_THRESHOLD_MS || provider?.errorCode === 'UPSTREAM_TIMEOUT'
+      ? 'CHẬM >40s'
+      : 'CHƯA KẾT LUẬN'
+    return `🟡 ${summary.modelId}: ${slowLabel} · HTTP ${http} · ${latencyMs}ms`
+  }
+  return `❌ ${summary.modelId}: LỖI · HTTP ${http} · ${latencyMs}ms`
+}
+
+export function formatModelHealthReport(
+  summaries: ModelSummary[],
+  title = 'APIVN model health check',
+): string {
+  const ok = summaries.filter((item) => reportOutcome(item) === 'ok').length
+  const slow = summaries.filter((item) => reportOutcome(item) === 'slow').length
+  const httpErrors = summaries.filter((item) => reportOutcome(item) === 'http_error').length
+  const lines = [
+    `🔎 ${title}`,
+    `Base: ${REPORT_BASE_URL}`,
+    `Tổng: ${summaries.length} · OK: ${ok} · Chậm/chưa kết luận: ${slow} · Lỗi HTTP: ${httpErrors}`,
+    '',
+    ...summaries.map(formatReportLine),
+    '',
+    `Checked: ${formatCheckedAt()}`,
+  ]
   return lines.join('\n')
+}
+
+function splitTelegramText(text: string): string[] {
+  if (text.length <= TELEGRAM_SAFE_MESSAGE_LENGTH) return [text]
+  const chunks: string[] = []
+  let current = ''
+  for (const line of text.split('\n')) {
+    const next = current ? `${current}\n${line}` : line
+    if (next.length > TELEGRAM_SAFE_MESSAGE_LENGTH && current) {
+      chunks.push(current)
+      current = line
+    } else {
+      current = next
+    }
+  }
+  if (current) chunks.push(current)
+  return chunks
 }
 
 export async function sendTelegramMessage(env: Env, chatId: string, text: string): Promise<boolean> {
   if (!env.TELEGRAM_BOT_TOKEN) return false
-  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
-  })
-  if (!response.ok) {
-    console.error('telegram sendMessage failed', response.status, (await response.text()).slice(0, 300))
-    return false
+  let allSent = true
+  for (const chunk of splitTelegramText(text)) {
+    const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: chunk, disable_web_page_preview: true }),
+    })
+    if (!response.ok) {
+      allSent = false
+      console.error('telegram sendMessage failed', response.status, (await response.text()).slice(0, 300))
+    }
   }
-  return true
+  return allSent
 }
 
 async function notifyModelTransitions(
@@ -308,11 +379,10 @@ async function notifyModelTransitions(
   const lines = ['🚨 APIVN model state changed', '']
   for (const summary of transitions) {
     const previous = before.get(summary.modelId) ?? 'unknown'
-    const problem = summary.providers.find((provider) => provider.status !== 'live')
-    const detail = summary.status === 'live'
-      ? summary.latencyMs == null ? '' : ` · ${summary.latencyMs}ms`
-      : ` · ${problem?.errorCode ?? problem?.httpStatus ?? 'error'}`
-    lines.push(`${statusEmoji(summary.status)} ${summary.modelId}: ${previous.toUpperCase()} → ${summary.status.toUpperCase()}${detail}`)
+    const provider = pickReportProvider(summary)
+    const http = provider?.httpStatus == null ? 'ERR' : String(provider.httpStatus)
+    const latency = provider?.latencyMs ?? summary.latencyMs ?? 0
+    lines.push(`${statusEmoji(summary.status)} ${summary.modelId}: ${previous.toUpperCase()} → ${summary.status.toUpperCase()} · HTTP ${http} · ${latency}ms`)
   }
   await sendTelegramMessage(env, env.TELEGRAM_CHAT_ID, lines.join('\n'))
 }
@@ -335,7 +405,10 @@ export async function runModelHealthScan(
   })
   const summaries = aggregateResults(results)
   if (options.notifyChanges !== false) await notifyModelTransitions(env, before, summaries)
-  return { summaries, text: formatSummaries(summaries, options.modelId ? 'Model health test' : 'APIVN Model Health') }
+  return {
+    summaries,
+    text: formatModelHealthReport(summaries, options.modelId ? 'APIVN model health check' : 'APIVN model health check'),
+  }
 }
 
 export async function readModelHealthStatus(env: Env, onlyProblems = false): Promise<string> {
@@ -352,9 +425,9 @@ export async function readModelHealthStatus(env: Env, onlyProblems = false): Pro
     errorMessage: null,
   }))
   const summaries = aggregateResults(results)
-  const filtered = onlyProblems ? summaries.filter((item) => item.status !== 'live') : summaries
-  if (onlyProblems && filtered.length === 0) return '✅ Không có model DEGRADED/DEAD.'
-  return formatSummaries(filtered, onlyProblems ? 'APIVN problems' : 'APIVN Model Health')
+  const filtered = onlyProblems ? summaries.filter((item) => reportOutcome(item) !== 'ok') : summaries
+  if (onlyProblems && filtered.length === 0) return '✅ Không có model chậm hoặc lỗi HTTP.'
+  return formatModelHealthReport(filtered, onlyProblems ? 'APIVN model problems' : 'APIVN model health check')
 }
 
 export async function ensureTelegramWebhook(env: Env): Promise<void> {
@@ -405,8 +478,8 @@ export async function handleTelegramUpdate(
   if (command === '/start' || command === '/help') {
     await sendTelegramMessage(env, incomingChatId, [
       '🤖 APIVN Model Health',
-      '/status — trạng thái tất cả model',
-      '/dead — chỉ model lỗi',
+      '/status — xem report gần nhất',
+      '/dead — chỉ model chậm/lỗi',
       '/test — test ngay tất cả model',
       '/test <model> — test một model, ví dụ /test sol',
     ].join('\n'))
@@ -425,7 +498,7 @@ export async function handleTelegramUpdate(
 
   if (command === '/test') {
     const modelId = args.join(' ').trim() || undefined
-    await sendTelegramMessage(env, incomingChatId, `⏳ Testing ${modelId ? resolveModelAlias(modelId) : 'all enabled models'}…`)
+    await sendTelegramMessage(env, incomingChatId, `⏳ Đang test ${modelId ? resolveModelAlias(modelId) : 'tất cả model'}…`)
     waitUntil(
       runModelHealthScan(env, { modelId, notifyChanges: false })
         .then((result) => sendTelegramMessage(env, incomingChatId, result.text))
