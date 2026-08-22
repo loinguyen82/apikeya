@@ -1,14 +1,24 @@
 name: Production E2E
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows:
+      - Deploy APIVN Web to Cloudflare
+    types:
+      - completed
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'cloudflare-migration') }}
     runs-on: ubuntu-latest
     timeout-minutes: 18
+    env:
+      BASE_URL: https://apivn.tech
+      GATEWAY_URL: https://api.apivn.tech
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,22 +28,33 @@ jobs:
       - run: npm ci
       - run: npm install --no-save @playwright/test@1.55.0
       - run: npx playwright install --with-deps chromium
-      - name: Wait for the new production deployment
+
+      - name: Wait for the deployed Cloudflare revision
+        if: ${{ github.event_name == 'workflow_run' }}
         shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           for i in {1..48}; do
-            if curl -fsSL https://apikeya.vercel.app | grep -q "Nạp từ 20.000đ"; then
-              echo "New production funnel is live"
+            body=$(curl -fsSL "$BASE_URL/api/version" 2>/dev/null || true)
+            revision=$(printf '%s' "$body" | jq -r '.revision // ""' 2>/dev/null || true)
+            if [ "$revision" = "$EXPECTED_SHA" ]; then
+              echo "Cloudflare revision $EXPECTED_SHA is live"
               exit 0
             fi
             sleep 10
           done
-          echo "Expected production revision did not become ready"
+          echo "Expected Cloudflare revision $EXPECTED_SHA did not become live"
           exit 1
+
+      - name: Check production health
+        shell: bash
+        run: |
+          curl -fsSL "$BASE_URL/api/version" | jq -e '.service == "apivn-web" and .version == "developer-console-v1"' >/dev/null
+          curl -fsSL "$BASE_URL/api/health" >/dev/null
+
       - name: Run E2E
         env:
-          BASE_URL: https://apikeya.vercel.app
-          GATEWAY_URL: https://ai-api-gateway.loi822004.workers.dev
           E2E_API_KEY: ${{ secrets.E2E_API_KEY }}
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
