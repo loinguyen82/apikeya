@@ -1,0 +1,19 @@
+name: PR MB Poller Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/mb-poller/**'
+      - '.github/workflows/pr-mb-poller-check.yml'
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --check services/mb-poller/src/index.mjs
