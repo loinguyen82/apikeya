@@ -69,6 +69,8 @@ jobs:
           check_redirect '/dashboard'
           check_redirect '/dashboard/billing'
           check_redirect '/dashboard/api-keys'
+          check_redirect '/dashboard/hexa'
+          check_redirect '/dashboard/quota'
           check_redirect '/dashboard/playground'
 
           code=$(curl -sS -o /tmp/login-body -w '%{http_code}' \
@@ -78,7 +80,7 @@ jobs:
             --data '{"apiKey":"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' || echo 000)
           body=$(cat /tmp/login-body 2>/dev/null | head -c 500 | tr '\n' ' ')
           echo "- POST /api/auth/login with API key payload: HTTP $code — $body" >> "$OUT"
-          [ "$code" = '400' ] || failures=$((failures+1))
+          [ "$code" = '401' ] || failures=$((failures+1))
 
           code=$(curl -sS -o /tmp/topup-body -w '%{http_code}' \
             -X POST "$BASE/api/topups" \
