@@ -81,20 +81,24 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     apiKey: string
     upstreamModel: string
     body: ChatCompletionRequest
+    outputCap: number
     timeoutMs: number
     safeNoChargeStatuses: number[]
   }): Promise<ProviderSuccess | ProviderFailure> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort('upstream_timeout'), args.timeoutMs)
     try {
+      const reservedOutputCap = Math.max(1, Math.min(args.outputCap, HARD_OUTPUT_CAP))
+      const requestedCap = requestedOutputCap(args.body, HARD_OUTPUT_CAP)
+      const forwardedOutputCap = Math.min(reservedOutputCap, requestedCap)
+      const outputLimit = args.body.max_completion_tokens != null
+        ? { max_completion_tokens: forwardedOutputCap }
+        : { max_tokens: forwardedOutputCap }
+
       const body = {
         ...args.body,
         model: args.upstreamModel,
-        ...(args.body.max_completion_tokens != null
-          ? { max_completion_tokens: requestedOutputCap(args.body, HARD_OUTPUT_CAP) }
-          : args.body.max_tokens != null
-          ? { max_tokens: requestedOutputCap(args.body, HARD_OUTPUT_CAP) }
-          : {}),
+        ...outputLimit,
         ...(args.body.stream ? { stream_options: { include_usage: true } } : {}),
       }
       const response = await fetch(`${args.baseUrl.replace(/\/$/, '')}/chat/completions`, {
@@ -130,6 +134,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       const providerRequestId = response.headers.get('x-request-id') ?? undefined
       if (args.body.stream) {
         if (!response.body) {
+          clearTimeout(timeout)
           return {
             providerId: this.id,
             code: 'UPSTREAM_STREAM_BODY_MISSING',
