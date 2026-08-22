@@ -1,8 +1,23 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/admin'
 import { BrandLogo } from '@/components/BrandLogo'
 import { AdminNav } from './AdminNav'
 import styles from './AdminLayout.module.css'
+
+export const metadata: Metadata = {
+  title: 'Admin Console | APIVN.tech',
+  description: 'Khu vực quản trị nội bộ APIVN.tech.',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
+}
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   await requireAdmin()
